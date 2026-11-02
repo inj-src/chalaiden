@@ -69,4 +69,20 @@ class UssdEngineTest {
         val o = Outcomes.classify(FlowKind.Payment, "Payment Tk 10.00 to 01783007004 successful. TrxID BK12AB34CD at 02/11/2026")
         assertEquals("BK12AB34CD", (o as Outcome.Success).trxId)
     }
+
+    @Test fun leftoverPromptInsteadOfMenuIsFlagged() {
+        val e = UssdEngine(Flows.sendMoney("01400635085", "10", null))
+        assertEquals(Action.Cancel, e.onDialog(prompt("Do you want to continue?\n1 - Yes\n2 - No")))
+        val outcome = (e.state as RunState.Finished).outcome as Outcome.Failed
+        assertTrue(outcome.menuMissing)
+    }
+
+    @Test fun trailingPromptAfterSessionIsClosedNotAnswered() {
+        UssdSession.begin(Flows.balance())
+        UssdSession.clear(now = 1_000L)
+        val trailing = prompt("Do you want to continue?\n1 - Yes\n2 - No")
+        assertEquals(Action.Cancel, UssdSession.onDialog(trailing, now = 5_000L))
+        assertEquals(Action.Dismiss, UssdSession.onDialog(Dialog.Notice("Thank you"), now = 5_000L))
+        assertEquals(Action.None, UssdSession.onDialog(trailing, now = 1_000L + UssdSession.TAIL_MILLIS))
+    }
 }

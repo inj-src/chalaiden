@@ -21,7 +21,8 @@ sealed interface Action {
 
 sealed interface Outcome {
     data class Success(val message: String, val trxId: String?) : Outcome
-    data class Failed(val message: String, val pinSent: Boolean) : Outcome
+    /** [menuMissing]: bKash answered with something other than its main menu, e.g. a leftover prompt. */
+    data class Failed(val message: String, val pinSent: Boolean, val menuMissing: Boolean = false) : Outcome
     data class Unknown(val message: String) : Outcome
     data object Cancelled : Outcome
 }
@@ -101,7 +102,7 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
         }
         return when (val step = flow.steps[index]) {
             is Step.Pick -> {
-                val option = Prompt.optionFor(text, step.label) ?: return mismatch(text)
+                val option = Prompt.optionFor(text, step.label) ?: return mismatch(text, menuMissing = index == 0)
                 moveTo(index + 1)
                 Action.Reply(option)
             }
@@ -127,8 +128,8 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
         state = RunState.Working(index, label)
     }
 
-    private fun mismatch(text: String): Action {
-        finish(Outcome.Failed(text, pinSent = false))
+    private fun mismatch(text: String, menuMissing: Boolean = false): Action {
+        finish(Outcome.Failed(text, pinSent = false, menuMissing = menuMissing))
         return Action.Cancel
     }
 

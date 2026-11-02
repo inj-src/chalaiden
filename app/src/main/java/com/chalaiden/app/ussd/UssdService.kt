@@ -3,7 +3,6 @@ package com.chalaiden.app.ussd
 import android.accessibilityservice.AccessibilityService
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Bundle
 import android.os.Handler
@@ -21,7 +20,6 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import com.chalaiden.app.MainActivity
 import com.chalaiden.app.ui.RunOverlay
 import com.chalaiden.app.ui.theme.ChalaidenTheme
 import kotlinx.coroutines.MainScope
@@ -45,15 +43,16 @@ class UssdService : AccessibilityService() {
         scope.launch {
             UssdSession.current.collect { snap ->
                 val state = snap?.state
+                // No bringing Chalaiden forward on finish: it sits under the phone app's dialogs
+                // already, and jumping over them would hide a trailing bKash prompt from us.
                 if (state == null || state is RunState.Finished) hideOverlay() else showOverlay()
-                if (state is RunState.Finished) bringAppForward()
             }
         }
         main.post(watchdog)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        if (UssdSession.current.value == null) return
+        if (!UssdSession.wantsDialogs) return
         if (event.packageName?.toString() !in PHONE_PACKAGES) return
         val root = phoneRoot() ?: return
         lastPhoneWindowAt = System.currentTimeMillis()
@@ -177,13 +176,6 @@ class UssdService : AccessibilityService() {
         overlayOwner?.stop()
         overlay = null
         overlayOwner = null
-    }
-
-    private fun bringAppForward() {
-        startActivity(
-            Intent(this, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
-        )
     }
 
     /** ComposeView needs a lifecycle; an overlay window has none of its own. */

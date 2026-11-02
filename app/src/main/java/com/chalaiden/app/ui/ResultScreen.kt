@@ -152,6 +152,8 @@ private fun describe(flow: UssdFlow, outcome: Outcome): Pair<String, String> {
         is Outcome.Success -> done to "bKash will also send you an SMS."
         is Outcome.Failed -> if (outcome.pinSent) {
             "Not completed" to "bKash turned this down after your PIN. Read its message below before trying again."
+        } else if (outcome.menuMissing) {
+            "bKash was still busy" to "Nothing was charged. bKash was finishing your last request. Wait a moment, then try again."
         } else {
             val expired = outcome.message.contains("Connection problem", ignoreCase = true)
             (if (expired) "bKash closed the session" else "Not sent to bKash") to
