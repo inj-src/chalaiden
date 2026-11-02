@@ -1,0 +1,12 @@
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="scan"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_scan"
+        android:shortcutShortLabel="@string/shortcut_scan">
+        <intent
+            android:action="com.chalaiden.app.SCAN"
+            android:targetPackage="com.chalaiden.app"
+            android:targetClass="com.chalaiden.app.MainActivity" />
+    </shortcut>
+</shortcuts>
