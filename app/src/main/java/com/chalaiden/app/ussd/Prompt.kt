@@ -2,7 +2,8 @@ package com.chalaiden.app.ussd
 
 /** Text helpers for USSD dialogs. bKash prepends changing promo lines, so the last line is the real prompt. */
 object Prompt {
-    private val menuLine = Regex("""^(\d{1,2})[.)]?\s+(.+)$""")
+    // "4 Payment", "0. Main Menu", "2 - No"
+    private val menuLine = Regex("""^(\d{1,2})\s*[.):-]?\s+(.+)$""")
     private val keyValue = Regex("""^([A-Za-z][A-Za-z ]{1,24}):\s*(.+)$""")
     private val trxId = Regex("""TrxID[:\s]*([A-Z0-9]{6,})""", RegexOption.IGNORE_CASE)
 
@@ -17,12 +18,22 @@ object Prompt {
 
     fun optionFor(text: String, label: String): String? = menuOptions(text)[label.lowercase()]
 
+    /** "Do you want to continue? 1 - Yes 2 - No", shown when the last session was left unfinished. */
+    fun isResumeOffer(text: String): Boolean =
+        text.contains("want to continue", ignoreCase = true) && optionFor(text, "No") != null
+
     fun isPinPrompt(text: String): Boolean = lastLine(text).contains("PIN", ignoreCase = false)
 
     /** "To: 017…", "Amount: Tk 10", … from the confirmation screen, in display order. */
     fun details(text: String): List<Pair<String, String>> =
         lines(text).dropLast(1).mapNotNull { keyValue.matchEntire(it) }
             .map { it.groupValues[1].trim() to it.groupValues[2].trim() }
+
+    private val balance = Regex("""(Current|Available) balance\s*Tk\.?\s*([\d,]+(?:\.\d+)?)""", RegexOption.IGNORE_CASE)
+
+    /** "Current" → "3,299.05", "Available" → "3,299.05" from a balance reply. */
+    fun balances(text: String): Map<String, String> =
+        balance.findAll(text).associate { it.groupValues[1].lowercase() to it.groupValues[2] }
 
     fun trxId(text: String): String? = trxId.find(text)?.groupValues?.get(1)
 }

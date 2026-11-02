@@ -25,8 +25,18 @@ data class UssdFlow(
 object Flows {
     const val CODE = "*247#"
 
-    /** Used when the user leaves the reference empty; bKash requires one. */
-    const val DEFAULT_REFERENCE = "1"
+    /**
+     * Sent when the user leaves the reference empty (bKash requires one), and hidden wherever bKash echoes it.
+     * Fixed, so it can be recognised; short, letters and digits only, because bKash rejects symbols
+     * ("<no-reference>" came back invalid); and not something a person would type as a real reference.
+     */
+    const val DEFAULT_REFERENCE = "ZQX7K"
+
+    /** Characters bKash takes in a reference; anything else is dropped as the user types. */
+    fun cleanReference(input: String): String = input.filter { it.isLetterOrDigit() || it == ' ' }.take(20)
+
+    /** True for the placeholder above, however bKash echoes it back. */
+    fun isDefaultReference(value: String?): Boolean = value?.trim().equals(DEFAULT_REFERENCE, ignoreCase = true)
 
     private fun rx(pattern: String) = Regex(pattern, RegexOption.IGNORE_CASE)
 

@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,13 +34,19 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.chalaiden.app.ui.components.NumberRail
+import com.chalaiden.app.ui.components.AnimatedCheck
+import com.chalaiden.app.ui.components.PopIn
+import com.chalaiden.app.ui.components.Spinner
 import com.chalaiden.app.ui.components.HoldToConfirm
+import com.chalaiden.app.ui.components.TextAction
 import com.chalaiden.app.ui.components.Keypad
 import com.chalaiden.app.ui.components.PinDots
 import com.chalaiden.app.ui.theme.Type
 import com.chalaiden.app.ui.theme.tokens
 import com.chalaiden.app.ussd.FlowKind
+import com.chalaiden.app.ussd.Flows
 import com.chalaiden.app.ussd.RunState
 import com.chalaiden.app.ussd.Step
 import com.chalaiden.app.ussd.UssdFlow
@@ -55,9 +61,10 @@ fun RunOverlay() {
     val snap by UssdSession.current.collectAsState()
     val s = snap ?: return
     val t = tokens
-    Box(Modifier.fillMaxSize().background(t.teal).systemBarsPadding()) {
+    Box(Modifier.fillMaxSize().background(t.bg).systemBarsPadding()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp)) {
-            Header(s.flow)
+            // On the PIN step bKash lists the recipient itself, so the rail would only repeat it.
+            Header(s.flow, showRecipient = s.state !is RunState.AwaitingPin)
             Spacer(Modifier.height(24.dp))
             AnimatedContent(targetState = s.state::class, label = "run", modifier = Modifier.weight(1f)) {
                 when (val state = s.state) {
@@ -72,20 +79,20 @@ fun RunOverlay() {
 }
 
 @Composable
-private fun Header(flow: UssdFlow) {
+private fun Header(flow: UssdFlow, showRecipient: Boolean) {
     val t = tokens
     val verb = when (flow.kind) {
         FlowKind.Payment -> "Paying"
         FlowKind.SendMoney -> "Sending"
         FlowKind.Balance -> "Checking balance"
     }
-    Text(verb, style = Type.title, color = t.onTeal.copy(alpha = 0.8f))
+    Text(verb, style = Type.title, color = t.inkSoft)
     if (flow.amount != null) {
-        Text("Tk ${flow.amount}", style = Type.amount, color = t.onTeal)
+        Text("Tk ${flow.amount}", style = Type.amount, color = t.ink)
     }
-    flow.recipient?.let {
+    flow.recipient?.takeIf { showRecipient }?.let {
         Spacer(Modifier.height(12.dp))
-        NumberRail(it, compact = true, onTeal = true)
+        NumberRail(it, compact = true)
     }
 }
 
@@ -100,31 +107,32 @@ private fun Progress(flow: UssdFlow, current: Int) {
         }
     }
     Column(Modifier.fillMaxSize()) {
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
+        Column(
+            Modifier.fillMaxWidth().padding(top = 8.dp).semantics { liveRegion = LiveRegionMode.Polite },
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
             labels.forEachIndexed { i, label ->
                 val done = i < current
                 val active = i == current
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier.size(22.dp).clip(CircleShape)
-                            .background(if (done) t.marigold else t.onTeal.copy(alpha = if (active) 0.9f else 0.25f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (done) Text("✓", style = Type.label, color = t.onMarigold)
+                    Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                        when {
+                            done -> PopIn {
+                                Box(Modifier.size(24.dp).clip(CircleShape).background(t.accent), contentAlignment = Alignment.Center) {
+                                    AnimatedCheck(t.onAccent, 16.dp, stroke = 2.2.dp)
+                                }
+                            }
+                            active -> Spinner(t.accent, 22.dp, stroke = 2.5.dp, track = t.raised)
+                            else -> Box(Modifier.size(10.dp).clip(CircleShape).background(t.raised))
+                        }
                     }
                     Spacer(Modifier.width(14.dp))
-                    Text(label, style = Type.body, color = t.onTeal.copy(alpha = if (done || active) 1f else 0.55f))
+                    Text(label, style = Type.body, color = if (done || active) t.ink else t.inkSoft)
                 }
             }
         }
         Spacer(Modifier.weight(1f))
-        Text(
-            "Cancel",
-            style = Type.button,
-            color = t.onTeal,
-            modifier = Modifier.align(Alignment.CenterHorizontally).clip(RoundedCornerShape(12.dp))
-                .clickable { UssdSession.cancel() }.padding(horizontal = 24.dp, vertical = 14.dp),
-        )
+        TextAction("Cancel", Modifier.align(Alignment.CenterHorizontally)) { UssdSession.cancel() }
     }
 }
 
@@ -141,36 +149,27 @@ private fun PinStep(flow: UssdFlow, state: RunState.AwaitingPin) {
     }
     Column(Modifier.fillMaxSize()) {
         Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(t.onTeal.copy(alpha = 0.1f)).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("bKash shows", style = Type.label, color = t.onTeal.copy(alpha = 0.75f))
             if (state.details.isEmpty()) {
-                Text("Enter your PIN to continue.", style = Type.body, color = t.onTeal)
+                Text("Enter your PIN to continue.", style = Type.body, color = t.ink)
             }
-            state.details.forEach { (k, v) ->
+            state.details
+                .filterNot { (k, v) -> k.equals("Reference", ignoreCase = true) && Flows.isDefaultReference(v) }
+                .forEach { (k, v) ->
                 Row {
-                    Text(k, style = Type.body, color = t.onTeal.copy(alpha = 0.75f), modifier = Modifier.weight(1f))
-                    Text(v, style = Type.body.copy(fontFamily = Type.button.fontFamily), color = t.onTeal)
+                    Text(k, style = Type.body, color = t.inkSoft, modifier = Modifier.weight(1f))
+                    Text(v, style = Type.body.copy(fontFamily = Type.button.fontFamily), color = t.ink)
                 }
             }
         }
-        Spacer(Modifier.height(18.dp))
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            PinDots(pin.length, PIN_LENGTH, t.onTeal)
-            Spacer(Modifier.weight(1f))
-            val secs = (left / 1000).toInt()
-            Text(
-                if (secs > 0) "Closes in %d:%02d".format(secs / 60, secs % 60) else "bKash may have closed this",
-                style = Type.label,
-                color = if (secs in 1..20) t.marigold else t.onTeal.copy(alpha = 0.75f),
-            )
-        }
         Spacer(Modifier.weight(1f))
+        PinDots(pin.length, PIN_LENGTH, Modifier.align(Alignment.CenterHorizontally))
+        Spacer(Modifier.height(20.dp))
         Keypad(
             onKey = { if (pin.length < PIN_LENGTH) pin += it },
             onBackspace = { pin = pin.dropLast(1) },
-            dark = true,
         )
         Spacer(Modifier.height(12.dp))
         val verb = when (flow.kind) {
@@ -183,12 +182,13 @@ private fun PinStep(flow: UssdFlow, state: RunState.AwaitingPin) {
             pin = ""
             UssdSession.submitPin(entered)
         }
+        TextAction("Cancel", Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp)) { pin = ""; UssdSession.cancel() }
+        val secs = (left / 1000).toInt()
         Text(
-            "Cancel",
-            style = Type.button,
-            color = t.onTeal,
-            modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 6.dp).clip(RoundedCornerShape(12.dp))
-                .clickable { pin = ""; UssdSession.cancel() }.padding(horizontal = 24.dp, vertical = 12.dp),
+            if (secs > 0) "Closes in %d:%02d".format(secs / 60, secs % 60) else "bKash may have closed this",
+            style = Type.label.copy(fontSize = 12.sp),
+            color = if (secs in 1..20) t.accent else t.inkSoft,
+            modifier = Modifier.align(Alignment.CenterHorizontally),
         )
     }
 }
@@ -197,9 +197,9 @@ private fun PinStep(flow: UssdFlow, state: RunState.AwaitingPin) {
 private fun Waiting(text: String) {
     val t = tokens
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        CircularProgressIndicator(color = t.marigold)
+        Spinner(t.accent, 48.dp, stroke = 3.5.dp, track = t.raised)
         Spacer(Modifier.height(18.dp))
-        Text(text, style = Type.title, color = t.onTeal)
-        Text("Don't close Chalaiden.", style = Type.body, color = t.onTeal.copy(alpha = 0.75f))
+        Text(text, style = Type.title, color = t.ink)
+        Text("Don't close Chalaiden.", style = Type.body, color = t.inkSoft)
     }
 }

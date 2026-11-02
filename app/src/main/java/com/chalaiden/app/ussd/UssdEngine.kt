@@ -45,6 +45,14 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
         private set
 
     private var lastHandled: Dialog? = null
+    private var resumeDeclines = 0
+
+    /** Prompts already answered. OxygenOS keeps the previous dialog around for a moment; seeing it again is not a new question. */
+    private val answered = mutableSetOf<String>()
+
+    /** When the state last moved, for spotting a stalled session. */
+    var lastChangeAt: Long = clock()
+        private set
 
     fun onDialog(dialog: Dialog): Action {
         if (dialog is Dialog.Progress) {
@@ -55,8 +63,10 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
         if (dialog == lastHandled) return Action.None
         lastHandled = dialog
 
+        if (dialog is Dialog.Prompt && dialog.text in answered && state is RunState.Working) return Action.None
+
         return when (val s = state) {
-            is RunState.Working -> advance(s.stepIndex, dialog)
+            is RunState.Working -> advance(s.stepIndex, dialog).also { if (it is Action.Reply) answered += dialog.textOrEmpty() }
             is RunState.AwaitingPin -> {
                 // A new dialog while we wait for the PIN means bKash dropped the session.
                 finish(Outcome.Failed(textOf(dialog).ifBlank { "The bKash session timed out." }, pinSent = false))
@@ -72,6 +82,7 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
 
     fun submitPin(pin: String): Action {
         if (state !is RunState.AwaitingPin) return Action.None
+        lastChangeAt = clock()
         state = RunState.Confirming
         return Action.Reply(pin)
     }
@@ -100,6 +111,14 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
             finish(Outcome.Failed(text, pinSent = false))
             return Action.Dismiss
         }
+        // bKash remembers a half-finished session and offers to resume it before the menu.
+        // Always decline: resuming would land us at an unknown step of a money flow.
+        if (index == 0 && Prompt.isResumeOffer(text) && resumeDeclines < 2) {
+            val no = Prompt.optionFor(text, "No") ?: return mismatch(text, menuMissing = true)
+            resumeDeclines++
+            lastChangeAt = clock()
+            return Action.Reply(no)
+        }
         return when (val step = flow.steps[index]) {
             is Step.Pick -> {
                 val option = Prompt.optionFor(text, step.label) ?: return mismatch(text, menuMissing = index == 0)
@@ -113,13 +132,21 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
             }
             Step.Pin -> {
                 if (!Prompt.isPinPrompt(text)) return mismatch(text)
+                lastChangeAt = clock()
                 state = RunState.AwaitingPin(Prompt.details(text), clock())
                 Action.None
             }
         }
     }
 
+    private fun Dialog.textOrEmpty() = when (this) {
+        is Dialog.Prompt -> text
+        is Dialog.Notice -> text
+        Dialog.Progress -> ""
+    }
+
     private fun moveTo(index: Int) {
+        lastChangeAt = clock()
         val label = when (val step = flow.steps[index]) {
             is Step.Pick -> "Choosing ${step.label}"
             is Step.Answer -> step.describe
@@ -134,6 +161,7 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
     }
 
     private fun finish(outcome: Outcome) {
+        lastChangeAt = clock()
         state = RunState.Finished(outcome)
     }
 

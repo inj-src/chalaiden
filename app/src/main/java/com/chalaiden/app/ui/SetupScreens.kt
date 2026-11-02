@@ -23,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,12 +33,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import com.chalaiden.app.ui.components.AppIcons
 import com.chalaiden.app.ui.components.PrimaryButton
 import com.chalaiden.app.ui.components.TopBar
 import com.chalaiden.app.ui.theme.Type
@@ -65,7 +68,7 @@ fun SetupScreen(prefs: Prefs, onDone: () -> Unit, onManual: (() -> Unit)?, onBac
     val serviceOn = remember(tick) { UssdService.isEnabled(context) }
     var disclosed by remember { mutableStateOf(prefs.disclosureAccepted) }
 
-    Column(Modifier.fillMaxSize().background(t.paper).systemBarsPadding()) {
+    Column(Modifier.fillMaxSize().background(t.bg).systemBarsPadding()) {
         TopBar("Set up", onBack)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
             SetupStep(1, "Phone access", phoneOk,
@@ -92,7 +95,7 @@ fun SetupScreen(prefs: Prefs, onDone: () -> Unit, onManual: (() -> Unit)?, onBac
                                 "open App info for Chalaiden, tap ⋮, and choose Allow restricted settings.",
                             style = Type.label, color = t.inkSoft,
                         )
-                        Text("Open App info", style = Type.button, color = t.link,
+                        Text("Open App info", style = Type.button, color = t.accent,
                             modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable {
                                 context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
                             }.padding(vertical = 10.dp))
@@ -103,7 +106,7 @@ fun SetupScreen(prefs: Prefs, onDone: () -> Unit, onManual: (() -> Unit)?, onBac
         Column(Modifier.padding(20.dp)) {
             PrimaryButton("Done", enabled = phoneOk && simId != null && serviceOn, onClick = onDone)
             if (onManual != null && !serviceOn) {
-                Text("Do it by hand this time", style = Type.button, color = t.link,
+                Text("Do it by hand this time", style = Type.button, color = t.accent,
                     modifier = Modifier.align(Alignment.CenterHorizontally).clip(RoundedCornerShape(10.dp))
                         .clickable(onClick = onManual).padding(14.dp))
             }
@@ -116,9 +119,12 @@ private fun SetupStep(n: Int, title: String, done: Boolean, body: String, conten
     val t = tokens
     Row(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
         Box(
-            Modifier.size(30.dp).clip(CircleShape).background(if (done) t.teal else t.paper).border(1.5.dp, if (done) t.teal else t.line, CircleShape),
+            Modifier.size(30.dp).clip(CircleShape).background(if (done) t.accent else t.raised),
             contentAlignment = Alignment.Center,
-        ) { Text(if (done) "✓" else "$n", style = Type.label, color = if (done) t.onTeal else t.ink) }
+        ) {
+            if (done) Icon(AppIcons.Check, null, tint = t.onAccent, modifier = Modifier.size(17.dp))
+            else Text("$n", style = Type.label, color = t.ink)
+        }
         Spacer(Modifier.size(14.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, style = Type.title, color = t.ink)
@@ -132,8 +138,8 @@ private fun SetupStep(n: Int, title: String, done: Boolean, body: String, conten
 private fun SimRow(sim: Sim, selected: Boolean, onClick: () -> Unit) {
     val t = tokens
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-            .border(if (selected) 2.dp else 1.5.dp, if (selected) t.teal else t.line, RoundedCornerShape(14.dp))
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(t.surface)
+            .border(2.dp, if (selected) t.accent else Color.Transparent, RoundedCornerShape(18.dp))
             .clickable(role = Role.RadioButton, onClick = onClick).padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -157,7 +163,7 @@ fun ManualScreen(flow: UssdFlow, simId: Int?, onBack: () -> Unit) {
             Step.Pin -> null
         }
     }
-    Column(Modifier.fillMaxSize().background(t.paper).systemBarsPadding()) {
+    Column(Modifier.fillMaxSize().background(t.bg).systemBarsPadding()) {
         TopBar("Do it by hand", onBack)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
             Text("Remember these, then open the bKash menu and type each one.", style = Type.body, color = t.inkSoft)

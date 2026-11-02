@@ -11,8 +11,8 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,13 +22,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,12 +34,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,11 +53,9 @@ import kotlinx.coroutines.launch
 val PhoneGroups = listOf(3, 4, 4)
 
 /**
- * A phone number on one rail: equal cells in 3-4-4 groups, a faint tick between groups
- * (a quiet nod to the boxed digits on merchant cards). Empty cells show a dot so you can
- * see what's missing; with [cursor] the next cell gets a marigold caret.
- *
- * [compact] drops the container for headers and summaries. [onTeal] is for teal surfaces.
+ * A phone number on one rail: equal cells in 3-4-4 groups with a faint tick between groups
+ * (a quiet nod to the boxed digits on merchant cards). Empty cells show a dot; with [cursor]
+ * the next cell gets a marigold caret. [compact] drops the container for headers and summaries.
  */
 @Composable
 fun NumberRail(
@@ -68,11 +64,8 @@ fun NumberRail(
     groups: List<Int> = PhoneGroups,
     cursor: Boolean = false,
     compact: Boolean = false,
-    onTeal: Boolean = false,
 ) {
     val t = tokens
-    val ink = if (onTeal) t.onTeal else t.ink
-    val faint = if (onTeal) t.onTeal.copy(alpha = 0.35f) else t.line
     val fontSize = if (compact) 22.sp else 32.sp
     val cellWidth = if (compact) 15.dp else 0.dp // 0 = share the full width
     val groupGap = if (compact) 14.dp else 18.dp
@@ -88,7 +81,7 @@ fun NumberRail(
             groups.forEachIndexed { g, size ->
                 if (g > 0) {
                     Box(Modifier.width(groupGap), contentAlignment = Alignment.Center) {
-                        Box(Modifier.width(1.dp).height(if (compact) 12.dp else 18.dp).background(faint))
+                        Box(Modifier.width(1.dp).height(if (compact) 12.dp else 18.dp).background(t.line))
                     }
                 }
                 repeat(size) {
@@ -100,9 +93,9 @@ fun NumberRail(
                         contentAlignment = Alignment.Center,
                     ) {
                         when {
-                            ch != null -> Text(ch.toString(), style = Type.digit.copy(fontSize = fontSize), color = ink)
-                            caret -> Box(Modifier.width(2.dp).height(if (compact) 18.dp else 28.dp).clip(RoundedCornerShape(1.dp)).background(t.marigold))
-                            else -> Box(Modifier.size(if (compact) 4.dp else 5.dp).clip(CircleShape).background(faint))
+                            ch != null -> Text(ch.toString(), style = Type.digit.copy(fontSize = fontSize), color = t.ink)
+                            caret -> Box(Modifier.width(2.dp).height(if (compact) 18.dp else 28.dp).clip(RoundedCornerShape(1.dp)).background(t.accent))
+                            else -> Box(Modifier.size(if (compact) 4.dp else 5.dp).clip(CircleShape).background(t.line))
                         }
                     }
                     index++
@@ -114,65 +107,85 @@ fun NumberRail(
     if (compact) {
         Box(modifier) { rail() }
     } else {
-        Box(
-            modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(20.dp))
-                .background(if (onTeal) t.onTeal.copy(alpha = 0.1f) else t.tile)
-                .border(1.dp, if (onTeal) Color.Transparent else t.line, RoundedCornerShape(20.dp))
-                .padding(horizontal = 14.dp, vertical = 14.dp),
-        ) { rail() }
+        Box(modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(t.surface).padding(16.dp)) { rail() }
     }
 }
 
-/** Large on-screen keypad. [extra] fills the bottom-left key (e.g. "." or nothing). */
+/** Round icon button with a label under it. [primary] is white, the rest are graphite. */
 @Composable
-fun Keypad(
-    onKey: (Char) -> Unit,
-    onBackspace: () -> Unit,
-    modifier: Modifier = Modifier,
-    extra: Char? = null,
-    dark: Boolean = false,
-) {
+fun RoundAction(icon: ImageVector, label: String, primary: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val t = tokens
+    Column(
+        modifier.clip(RoundedCornerShape(16.dp)).clickable(role = Role.Button, onClickLabel = label, onClick = onClick).padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(Modifier.size(62.dp).clip(CircleShape).background(if (primary) t.ink else t.raised), contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, tint = if (primary) t.bg else t.ink, modifier = Modifier.size(26.dp))
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(label, style = Type.label, color = t.ink, textAlign = TextAlign.Center)
+    }
+}
+
+/** Small pill with an icon, for secondary ways in (contacts, paste, scan). */
+@Composable
+fun Chip(icon: ImageVector, label: String, onClick: () -> Unit) {
+    val t = tokens
+    Row(
+        Modifier.clip(RoundedCornerShape(50)).background(t.raised).clickable(role = Role.Button, onClick = onClick)
+            .padding(start = 12.dp, end = 16.dp, top = 9.dp, bottom = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = t.ink, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = Type.label, color = t.ink)
+    }
+}
+
+/** Large on-screen keypad. */
+@Composable
+fun Keypad(onKey: (Char) -> Unit, onBackspace: () -> Unit, modifier: Modifier = Modifier) {
     val haptics = LocalHapticFeedback.current
-    val keyColor = if (dark) t.onTeal else t.ink
-    val rows = listOf("123", "456", "789")
+    val tap = { c: Char -> haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onKey(c) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        rows.forEach { row ->
+        listOf("123", "456", "789").forEach { row ->
             Row(Modifier.fillMaxWidth()) {
-                row.forEach { c -> Key(c.toString(), keyColor, Modifier.weight(1f)) { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onKey(c) } }
+                row.forEach { c -> Key(c.toString(), Modifier.weight(1f)) { tap(c) } }
             }
         }
         Row(Modifier.fillMaxWidth()) {
-            if (extra != null) Key(extra.toString(), keyColor, Modifier.weight(1f)) { onKey(extra) } else Spacer(Modifier.weight(1f))
-            Key("0", keyColor, Modifier.weight(1f)) { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onKey('0') }
-            Key("⌫", keyColor, Modifier.weight(1f), description = "Delete") { onBackspace() }
+            Spacer(Modifier.weight(1f))
+            Key("0", Modifier.weight(1f)) { tap('0') }
+            Key("", Modifier.weight(1f), description = "Delete", icon = AppIcons.Backspace) { onBackspace() }
         }
     }
 }
 
 @Composable
-private fun Key(label: String, color: Color, modifier: Modifier, description: String? = null, onClick: () -> Unit) {
+private fun Key(label: String, modifier: Modifier, description: String? = null, icon: ImageVector? = null, onClick: () -> Unit) {
+    val t = tokens
     Box(
         modifier
             .height(64.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(16.dp))
             .clickable(role = Role.Button, onClick = onClick)
             .semantics { if (description != null) contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = Type.digit.copy(fontSize = 26.sp), color = color)
+        if (icon != null) Icon(icon, contentDescription = null, tint = t.ink, modifier = Modifier.size(26.dp))
+        else Text(label, style = Type.digit.copy(fontSize = 28.sp, fontWeight = FontWeight.Normal), color = t.ink)
     }
 }
 
 @Composable
-fun PinDots(filled: Int, length: Int, color: Color, modifier: Modifier = Modifier) {
+fun PinDots(filled: Int, length: Int, modifier: Modifier = Modifier) {
+    val t = tokens
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         repeat(length) { i ->
             Box(
                 Modifier.size(14.dp).clip(CircleShape)
-                    .background(if (i < filled) color else Color.Transparent)
-                    .border(2.dp, color, CircleShape),
+                    .background(if (i < filled) t.accent else Color.Transparent)
+                    .border(2.dp, if (i < filled) t.accent else t.line, CircleShape),
             )
         }
     }
@@ -192,9 +205,9 @@ fun HoldToConfirm(label: String, enabled: Boolean, modifier: Modifier = Modifier
     Box(
         modifier
             .fillMaxWidth()
-            .height(64.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(if (enabled) t.marigold.copy(alpha = 0.35f) else t.line)
+            .height(60.dp)
+            .clip(RoundedCornerShape(50))
+            .background(if (enabled) t.accent.copy(alpha = 0.28f) else t.raised)
             .semantics { contentDescription = "$label. Press and hold." }
             .pointerInput(enabled) {
                 if (!enabled) return@pointerInput
@@ -216,40 +229,59 @@ fun HoldToConfirm(label: String, enabled: Boolean, modifier: Modifier = Modifier
                 }
             },
     ) {
-        Box(Modifier.fillMaxHeight().fillMaxWidth(progress.value).background(if (enabled) t.marigold else t.line))
+        Box(Modifier.fillMaxHeight().fillMaxWidth(progress.value).background(if (enabled) t.accent else t.raised))
         Text(
             if (progress.value > 0f && !done) "Keep holding…" else label,
             style = Type.button,
-            color = if (enabled) t.onMarigold else t.inkSoft,
+            color = if (enabled) t.onAccent else t.inkSoft,
             textAlign = TextAlign.Center,
             modifier = Modifier.align(Alignment.Center),
         )
     }
 }
 
+/** The main action on a screen: a white pill. */
 @Composable
 fun PrimaryButton(label: String, enabled: Boolean = true, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val t = tokens
     Box(
         modifier
             .fillMaxWidth()
-            .height(58.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(if (enabled) t.teal else t.line)
+            .height(56.dp)
+            .clip(RoundedCornerShape(50))
+            .background(if (enabled) t.ink else t.raised)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = Type.button, color = if (enabled) t.onTeal else t.inkSoft)
+        Text(label, style = Type.button, color = if (enabled) t.bg else t.inkSoft)
     }
 }
 
+/** A quieter action under the primary one. */
+@Composable
+fun TextAction(label: String, modifier: Modifier = Modifier, color: Color = tokens.ink, onClick: () -> Unit) {
+    Text(
+        label,
+        style = Type.button,
+        color = color,
+        textAlign = TextAlign.Center,
+        modifier = modifier.clip(RoundedCornerShape(50)).clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 14.dp),
+    )
+}
+
+/** Back button in a graphite circle, then the screen title. */
 @Composable
 fun TopBar(title: String, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val t = tokens
-    Row(modifier.fillMaxWidth().padding(start = 4.dp, end = 20.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = t.ink)
+    Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.size(44.dp).clip(CircleShape).background(t.raised).clickable(role = Role.Button, onClickLabel = "Back", onClick = onBack),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(AppIcons.Back, contentDescription = "Back", tint = t.ink, modifier = Modifier.size(22.dp))
         }
+        Spacer(Modifier.width(14.dp))
         Text(title, style = Type.title, color = t.ink)
     }
 }

@@ -8,10 +8,12 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.compose.ui.platform.ComposeView
+import com.chalaiden.app.BuildConfig
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -57,7 +59,17 @@ class UssdService : AccessibilityService() {
         val root = phoneRoot() ?: return
         lastPhoneWindowAt = System.currentTimeMillis()
         val dialog = read(root) ?: return
-        perform(UssdSession.onDialog(dialog), root)
+        val action = UssdSession.onDialog(dialog)
+        if (BuildConfig.DEBUG) {
+            // Prompt wording and action kind only: reply values (numbers, PIN) never reach the log.
+            val line = when (dialog) {
+                is Dialog.Prompt -> Prompt.lastLine(dialog.text)
+                is Dialog.Notice -> Prompt.lastLine(dialog.text)
+                Dialog.Progress -> "…"
+            }
+            Log.i(TAG, "${dialog::class.simpleName} \"$line\" -> ${action::class.simpleName} [${UssdSession.current.value?.state}]")
+        }
+        perform(action, root)
     }
 
     override fun onInterrupt() = Unit
@@ -79,6 +91,8 @@ class UssdService : AccessibilityService() {
                 if (phoneRoot() != null) lastPhoneWindowAt = now
                 if (lastPhoneWindowAt == 0L) lastPhoneWindowAt = now
                 if (now - lastPhoneWindowAt > LOST_AFTER_MILLIS) UssdSession.onSessionLost()
+                val stall = UssdSession.checkStall(now)
+                if (stall != Action.None) phoneRoot()?.let { perform(stall, it) }
             } else {
                 lastPhoneWindowAt = 0L
             }
@@ -100,8 +114,13 @@ class UssdService : AccessibilityService() {
         main.postDelayed({ sweep(attempts - 1, then) }, 400)
     }
 
+    /**
+     * The phone app's top-most window. OxygenOS stacks USSD dialogs and the previous one
+     * lingers for a moment, so "first in the list" can be the stale prompt.
+     */
     private fun phoneRoot(): AccessibilityNodeInfo? =
-        windows.mapNotNull { it.root }.firstOrNull { it.packageName?.toString() in PHONE_PACKAGES }
+        windows.filter { it.root?.packageName?.toString() in PHONE_PACKAGES }
+            .maxByOrNull { it.layer }?.root
 
     private fun read(root: AccessibilityNodeInfo): Dialog? {
         val nodes = flatten(root)
@@ -196,6 +215,7 @@ class UssdService : AccessibilityService() {
     }
 
     companion object {
+        private const val TAG = "ChalaidenUssd"
         private val PHONE_PACKAGES = setOf("com.android.phone")
         private val MESSAGE_IDS = listOf("com.android.phone:id/message_field", "android:id/message")
         private const val LOST_AFTER_MILLIS = 6_000L

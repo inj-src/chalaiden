@@ -15,6 +15,12 @@ object UssdSession {
      */
     const val TAIL_MILLIS = 20_000L
 
+    /** Before the PIN, bKash answers within seconds. This long with nothing new means the session is stuck. */
+    const val STALL_MILLIS = 25_000L
+
+    /** After the PIN, give bKash longer to answer before calling the outcome unknown. */
+    const val CONFIRM_STALL_MILLIS = 45_000L
+
     /** bKash dropped an idle PIN step after ~190 s on Grameenphone (measured 2026-11-02); keep a margin. */
     const val PIN_WINDOW_MILLIS = 170_000L
 
@@ -66,6 +72,21 @@ object UssdSession {
         val action = engine?.cancel() ?: return
         publish()
         performer?.invoke(action)
+    }
+
+    /** Called every second by the service. Ends a session that stopped moving; returns what to do with the dialog. */
+    @Synchronized fun checkStall(now: Long = System.currentTimeMillis()): Action {
+        val e = engine ?: return Action.None
+        val idle = now - e.lastChangeAt
+        val stuck = when (e.state) {
+            is RunState.Working -> idle > STALL_MILLIS
+            RunState.Confirming -> idle > CONFIRM_STALL_MILLIS
+            else -> false
+        }
+        if (!stuck) return Action.None
+        e.onSessionLost()
+        publish()
+        return Action.Cancel
     }
 
     @Synchronized fun onSessionLost() {

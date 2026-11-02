@@ -44,12 +44,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.chalaiden.app.ocr.NumberExtractor
 import com.chalaiden.app.ui.components.NumberRail
+import com.chalaiden.app.ui.components.AppIcons
+import com.chalaiden.app.ui.components.Chip
 import com.chalaiden.app.ui.components.Keypad
 import com.chalaiden.app.ui.components.PrimaryButton
 import com.chalaiden.app.ui.components.TopBar
 import com.chalaiden.app.ui.theme.Type
 import com.chalaiden.app.ui.theme.tokens
 import com.chalaiden.app.ussd.FlowKind
+import com.chalaiden.app.ussd.Flows
 
 /**
  * Confirm or type the recipient number. When it came from the camera, the crop sits on top
@@ -74,7 +77,7 @@ fun NumberScreen(
     }
     val valid = NumberExtractor.isValid(number)
 
-    Column(Modifier.fillMaxSize().background(t.paper).systemBarsPadding()) {
+    Column(Modifier.fillMaxSize().background(t.bg).systemBarsPadding()) {
         TopBar(if (kind == FlowKind.Payment) "Shop's bKash number" else "Send to", onBack)
         Column(Modifier.weight(1f).padding(horizontal = 20.dp)) {
             if (crop != null) {
@@ -88,7 +91,7 @@ fun NumberScreen(
                     // Number strips are very wide; cap the ratio so the digits stay big enough to compare.
                     modifier = Modifier.fillMaxWidth()
                         .aspectRatio((crop.width.toFloat() / crop.height).coerceIn(1.5f, 4.2f))
-                        .clip(RoundedCornerShape(12.dp)).background(t.tile),
+                        .clip(RoundedCornerShape(20.dp)).background(t.surface),
                 )
                 Spacer(Modifier.height(14.dp))
                 Text(if (initial.isNotEmpty()) "Chalaiden read" else "Type the number you see", style = Type.label, color = t.inkSoft)
@@ -109,9 +112,9 @@ fun NumberScreen(
             )
             if (crop == null) {
                 Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (kind == FlowKind.SendMoney) Chip("Contacts") { contact.launch(Unit) }
-                    Chip("Paste") { pasted(context)?.let { number = it } }
-                    if (onScan != null) Chip("Scan") { onScan() }
+                    if (kind == FlowKind.SendMoney) Chip(AppIcons.Person, "Contacts") { contact.launch(Unit) }
+                    Chip(AppIcons.Paste, "Paste") { pasted(context)?.let { number = it } }
+                    if (onScan != null) Chip(AppIcons.Scan, "Scan") { onScan() }
                 }
             }
             Spacer(Modifier.weight(1f))
@@ -131,7 +134,7 @@ fun AmountScreen(kind: FlowKind, number: String, onPay: (amount: String, referen
     val value = amount.toLongOrNull() ?: 0
     val verb = if (kind == FlowKind.Payment) "Pay" else "Send"
 
-    Column(Modifier.fillMaxSize().background(t.paper).systemBarsPadding().imePadding()) {
+    Column(Modifier.fillMaxSize().background(t.bg).systemBarsPadding().imePadding()) {
         TopBar(if (kind == FlowKind.Payment) "Pay shop" else "Send money", onBack)
         Column(Modifier.weight(1f).padding(horizontal = 20.dp)) {
             Spacer(Modifier.height(4.dp))
@@ -151,20 +154,20 @@ fun AmountScreen(kind: FlowKind, number: String, onPay: (amount: String, referen
             if (showReference) {
                 BasicTextField(
                     value = reference,
-                    onValueChange = { reference = it.take(20) },
+                    onValueChange = { reference = Flows.cleanReference(it) },
                     singleLine = true,
                     textStyle = Type.body.copy(color = t.ink),
-                    cursorBrush = SolidColor(t.teal),
+                    cursorBrush = SolidColor(t.accent),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.5.dp, t.line, RoundedCornerShape(12.dp))
-                        .padding(14.dp),
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(t.surface)
+                        .padding(16.dp),
                     decorationBox = { inner ->
                         if (reference.isEmpty()) Text("Reference, e.g. table 4", style = Type.body, color = t.inkSoft)
                         inner()
                     },
                 )
             } else {
-                Text("Add reference", style = Type.button, color = t.link,
+                Text("Add reference", style = Type.button, color = t.accent,
                     modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { showReference = true }.padding(vertical = 10.dp))
             }
             Spacer(Modifier.weight(1f))
@@ -179,14 +182,6 @@ fun AmountScreen(kind: FlowKind, number: String, onPay: (amount: String, referen
             modifier = Modifier.padding(20.dp),
         ) { onPay(amount, reference.trim()) }
     }
-}
-
-@Composable
-private fun Chip(label: String, onClick: () -> Unit) {
-    val t = tokens
-    Text(label, style = Type.label.copy(fontSize = 15.sp), color = t.ink,
-        modifier = Modifier.clip(RoundedCornerShape(50)).border(1.5.dp, t.line, RoundedCornerShape(50))
-            .clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 9.dp))
 }
 
 private fun pasted(context: Context): String? {

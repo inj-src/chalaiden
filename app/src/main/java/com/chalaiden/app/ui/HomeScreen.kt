@@ -1,8 +1,8 @@
 package com.chalaiden.app.ui
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,18 +13,23 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.chalaiden.app.ui.components.AppIcons
+import com.chalaiden.app.ui.components.QrStand
+import com.chalaiden.app.ui.components.RoundAction
 import com.chalaiden.app.ui.theme.Type
 import com.chalaiden.app.ui.theme.tokens
 
@@ -33,79 +38,71 @@ fun HomeScreen(
     simLabel: String?,
     setupDone: Boolean,
     onScan: () -> Unit,
+    onType: () -> Unit,
     onSend: () -> Unit,
     onBalance: () -> Unit,
     onSetup: () -> Unit,
 ) {
     val t = tokens
-    Column(Modifier.fillMaxSize().background(t.paper).systemBarsPadding().padding(horizontal = 20.dp)) {
-        Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+    Column(
+        Modifier.fillMaxSize().background(t.bg).systemBarsPadding().verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("chalaiden", style = Type.wordmark, color = t.ink)
             Spacer(Modifier.weight(1f))
-            if (simLabel != null) {
-                Text(simLabel, style = Type.label, color = t.inkSoft,
-                    modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onSetup).padding(horizontal = 12.dp, vertical = 8.dp))
+            Box(
+                Modifier.size(44.dp).clip(CircleShape).background(t.raised)
+                    .clickable(role = Role.Button, onClickLabel = "SIM and setup", onClick = onSetup),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(AppIcons.Sim, contentDescription = "SIM and setup", tint = t.ink, modifier = Modifier.size(22.dp))
             }
         }
 
-        ScanBlock(onScan, Modifier.weight(1f))
+        Spacer(Modifier.height(36.dp))
+        Text(simLabel?.let { "bKash on $it" } ?: "bKash", style = Type.label, color = t.inkSoft)
+        Spacer(Modifier.height(6.dp))
+        Text("Pay any shop,\nno internet needed.", style = Type.display.copy(fontSize = 34.sp, lineHeight = 40.sp), color = t.ink)
 
-        Spacer(Modifier.height(12.dp))
-        Row("Send money", "To any bKash number", onSend)
-        HorizontalDivider(color = t.line)
-        Row("Check balance", "Asks bKash, needs your PIN", onBalance)
+        Spacer(Modifier.height(32.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            RoundAction(AppIcons.Scan, "Scan", primary = true, modifier = Modifier.weight(1f), onClick = onScan)
+            RoundAction(AppIcons.Dialpad, "Type", modifier = Modifier.weight(1f), onClick = onType)
+            RoundAction(AppIcons.Send, "Send", modifier = Modifier.weight(1f), onClick = onSend)
+            RoundAction(AppIcons.Wallet, "Balance", modifier = Modifier.weight(1f), onClick = onBalance)
+        }
 
+        Spacer(Modifier.height(40.dp))
         if (!setupDone) {
-            HorizontalDivider(color = t.line)
-            Row("Finish setup", "So Chalaiden can answer bKash for you", onSetup, accent = true)
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable(role = Role.Button, onClick = onSetup)
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(t.accent))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Finish setup", style = Type.title, color = t.ink)
+                    Text("So Chalaiden can answer bKash for you", style = Type.label, color = t.inkSoft)
+                }
+                Icon(AppIcons.ChevronRight, contentDescription = null, tint = t.inkSoft, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.height(28.dp))
         }
-        Spacer(Modifier.height(12.dp))
-    }
-}
 
-/** The one big thing on the home screen: aim the camera at the shop's card. */
-@Composable
-private fun ScanBlock(onScan: () -> Unit, modifier: Modifier) {
-    val t = tokens
-    Box(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(t.teal)
-            .clickable(role = Role.Button, onClickLabel = "Scan to pay", onClick = onScan)
-            .padding(24.dp),
-    ) {
-        Canvas(Modifier.align(Alignment.Center).fillMaxWidth(0.62f).height(120.dp)) {
-            val len = 34.dp.toPx()
-            val w = 5.dp.toPx()
-            listOf(
-                Offset(0f, 0f) to Offset(1f, 1f), Offset(size.width, 0f) to Offset(-1f, 1f),
-                Offset(0f, size.height) to Offset(1f, -1f), Offset(size.width, size.height) to Offset(-1f, -1f),
-            ).forEach { (o, d) ->
-                drawLine(t.marigold, o, Offset(o.x + d.x * len, o.y), w, StrokeCap.Round)
-                drawLine(t.marigold, o, Offset(o.x, o.y + d.y * len), w, StrokeCap.Round)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            QrStand()
+            Spacer(Modifier.width(20.dp))
+            Column(Modifier.weight(1f)) {
+                Text("What to scan", style = Type.title, color = t.ink)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Aim at the number printed under the shop's bKash QR, not the QR itself. Chalaiden reads it and dials *247# for you.",
+                    style = Type.label, color = t.inkSoft,
+                )
             }
         }
-        Column(Modifier.align(Alignment.BottomStart)) {
-            Text("Scan to pay", style = Type.display.copy(fontSize = 40.sp, lineHeight = 44.sp), color = t.onTeal)
-            Spacer(Modifier.height(6.dp))
-            Text("Point at the number on the shop's bKash card. Works without internet.",
-                style = Type.body, color = t.onTeal.copy(alpha = 0.8f))
-        }
-    }
-}
-
-@Composable
-private fun Row(title: String, hint: String, onClick: () -> Unit, accent: Boolean = false) {
-    val t = tokens
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(role = Role.Button, onClick = onClick)
-            .padding(vertical = 18.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (accent) Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(t.marigold))
-        if (accent) Spacer(Modifier.size(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = Type.title, color = t.ink)
-            Text(hint, style = Type.label, color = t.inkSoft)
-        }
-        Text("›", style = Type.title.copy(fontSize = 28.sp), color = t.inkSoft)
+        Spacer(Modifier.height(24.dp))
     }
 }

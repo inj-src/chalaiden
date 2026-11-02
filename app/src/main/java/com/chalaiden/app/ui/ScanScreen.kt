@@ -34,10 +34,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -53,6 +50,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.semantics.Role
@@ -65,6 +63,8 @@ import com.chalaiden.app.ocr.NumberAnalyzer
 import com.chalaiden.app.ocr.NumberFinder
 import com.chalaiden.app.ocr.NumberRead
 import com.chalaiden.app.ui.components.NumberRail
+import com.chalaiden.app.ui.components.AppIcons
+import com.chalaiden.app.ui.components.Chip
 import com.chalaiden.app.ui.components.PrimaryButton
 import com.chalaiden.app.ui.theme.Type
 import com.chalaiden.app.ui.theme.tokens
@@ -138,20 +138,12 @@ private fun Camera(onRead: (NumberRead) -> Unit, onTypeInstead: () -> Unit, onGa
 
     Column(Modifier.fillMaxSize().systemBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
+            CircleButton(AppIcons.Back, "Back", onClick = onBack)
             Spacer(Modifier.weight(1f))
-            Text(
-                if (torch) "Torch on" else "Torch",
-                style = Type.label,
-                color = if (torch) t.onMarigold else Color.White,
-                modifier = Modifier.clip(RoundedCornerShape(50))
-                    .background(if (torch) t.marigold else Color.White.copy(alpha = 0.18f))
-                    .clickable(role = Role.Switch) {
-                        torch = !torch
-                        camera?.cameraControl?.enableTorch(torch)
-                    }
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-            )
+            CircleButton(AppIcons.Torch, if (torch) "Turn torch off" else "Turn torch on", active = torch) {
+                torch = !torch
+                camera?.cameraControl?.enableTorch(torch)
+            }
         }
 
         Spacer(Modifier.weight(0.6f))
@@ -166,7 +158,7 @@ private fun Camera(onRead: (NumberRead) -> Unit, onTypeInstead: () -> Unit, onGa
         Spacer(Modifier.height(16.dp))
         Box(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 24.dp), contentAlignment = Alignment.Center) {
             val l = live
-            if (l != null) NumberRail(l, compact = true, onTeal = true)
+            if (l != null) NumberRail(l, compact = true)
             else Text("Looking for an 11-digit number…", style = Type.body, color = Color.White.copy(alpha = 0.8f))
         }
         Spacer(Modifier.weight(1f))
@@ -176,23 +168,34 @@ private fun Camera(onRead: (NumberRead) -> Unit, onTypeInstead: () -> Unit, onGa
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text("From photo", style = Type.label, color = Color.White,
-                modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onGallery).padding(12.dp))
+            CircleButton(AppIcons.Photo, "From photo", size = 56, onClick = onGallery)
             Box(
                 Modifier.size(76.dp).clip(CircleShape).border(4.dp, Color.White, CircleShape).padding(8.dp).clip(CircleShape)
                     .background(Color.White).clickable(role = Role.Button) { analyzer.captureNow = true }
                     .semantics { contentDescription = "Capture now" },
             )
-            Text("Type it", style = Type.label, color = Color.White,
-                modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onTypeInstead).padding(12.dp))
+            CircleButton(AppIcons.Dialpad, "Type it", size = 56, onClick = onTypeInstead)
         }
+    }
+}
+
+/** Translucent round button that reads on top of the camera preview. */
+@Composable
+private fun CircleButton(icon: ImageVector, label: String, size: Int = 44, active: Boolean = false, onClick: () -> Unit) {
+    val t = tokens
+    Box(
+        Modifier.size(size.dp).clip(CircleShape).background(if (active) t.accent else Color.Black.copy(alpha = 0.45f))
+            .clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = label, tint = if (active) t.onAccent else Color.White, modifier = Modifier.size((size * 0.48f).dp))
     }
 }
 
 /** Corner brackets around the strip where the printed number should sit. */
 @Composable
 private fun Viewfinder(locked: Boolean, modifier: Modifier) {
-    val color = if (locked) tokens.marigold else Color.White
+    val color = if (locked) tokens.accent else Color.White
     Canvas(modifier) {
         val len = size.height * 0.28f
         val w = 4.dp.toPx()
@@ -209,8 +212,8 @@ private fun Viewfinder(locked: Boolean, modifier: Modifier) {
 @Composable
 private fun NoCamera(onAllow: () -> Unit, onGallery: () -> Unit, onTypeInstead: () -> Unit, onBack: () -> Unit) {
     val t = tokens
-    Column(Modifier.fillMaxSize().background(t.paper).systemBarsPadding().padding(24.dp)) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = t.ink) }
+    Column(Modifier.fillMaxSize().background(t.bg).systemBarsPadding().padding(24.dp)) {
+        CircleButton(AppIcons.Back, "Back", onClick = onBack)
         Spacer(Modifier.weight(1f))
         Text("Chalaiden needs the camera to read the shop's number", style = Type.display, color = t.ink)
         Spacer(Modifier.height(12.dp))
@@ -218,8 +221,8 @@ private fun NoCamera(onAllow: () -> Unit, onGallery: () -> Unit, onTypeInstead: 
         Spacer(Modifier.weight(1f))
         PrimaryButton("Allow camera", onClick = onAllow)
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("From photo", style = Type.button, color = t.teal, modifier = Modifier.clickable(onClick = onGallery).padding(14.dp))
-            Text("Type it", style = Type.button, color = t.teal, modifier = Modifier.clickable(onClick = onTypeInstead).padding(14.dp))
+            Chip(AppIcons.Photo, "From photo", onGallery)
+            Chip(AppIcons.Dialpad, "Type it", onTypeInstead)
         }
     }
 }
