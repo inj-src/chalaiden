@@ -1,6 +1,6 @@
 package com.chalaiden.app.ussd
 
-/** What the accessibility service sees in the phone app's USSD window. */
+/** What the driver reads from the phone app's USSD window. */
 sealed interface Dialog {
     /** A message with a reply box. */
     data class Prompt(val text: String) : Dialog
@@ -13,7 +13,11 @@ sealed interface Dialog {
 }
 
 sealed interface Action {
-    data class Reply(val text: String) : Action
+    /**
+     * [to]: the exact prompt this answers. Set for the PIN, which goes in from the PIN pad some time
+     * after its summary was checked; the driver refuses to type it unless that prompt is still showing.
+     */
+    data class Reply(val text: String, val to: String? = null) : Action
     data object Cancel : Action
     data object Dismiss : Action
     data object None : Action
@@ -28,8 +32,19 @@ sealed interface Outcome {
 }
 
 sealed interface RunState {
+    /** Details and PIN entry on Chalaiden's screen; nothing dialled yet. */
+    data object Ready : RunState
     data class Working(val stepIndex: Int, val label: String) : RunState
-    data class AwaitingPin(val details: List<Pair<String, String>>, val sinceMillis: Long) : RunState
+
+    /**
+     * bKash's confirmation is up and waits for the PIN. [feeToConfirm]: the PIN was entered up front,
+     * but bKash added a fee the user hasn't seen, so it waits for one more go-ahead.
+     */
+    data class AwaitingPin(
+        val details: List<Pair<String, String>>,
+        val sinceMillis: Long,
+        val feeToConfirm: String? = null,
+    ) : RunState
     data object Confirming : RunState
     data class Finished(val outcome: Outcome) : RunState
 }
@@ -45,7 +60,13 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
         private set
 
     private var lastHandled: Dialog? = null
+
+    /** The confirmation prompt the PIN answered; it can linger on screen after the PIN is sent. */
+    private var pinPrompt: String? = null
     private var resumeDeclines = 0
+
+    /** Entered before bKash asked for it; sent only once bKash's summary matches the flow. Wiped once used. */
+    private var pin: String? = null
 
     /** Prompts already answered. OxygenOS keeps the previous dialog around for a moment; seeing it again is not a new question. */
     private val answered = mutableSetOf<String>()
@@ -73,25 +94,55 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
                 if (dialog is Dialog.Prompt) Action.Cancel else Action.Dismiss
             }
             RunState.Confirming -> {
+                if (dialog is Dialog.Prompt && dialog.text == pinPrompt) return Action.None
                 finish(Outcomes.classify(flow.kind, textOf(dialog)))
                 if (dialog is Dialog.Prompt) Action.Cancel else Action.Dismiss
             }
             is RunState.Finished -> if (dialog is Dialog.Prompt) Action.Cancel else Action.Dismiss
+            RunState.Ready -> Action.None // an engine starts at Working; Ready is the session's
         }
     }
 
     fun submitPin(pin: String): Action {
         if (state !is RunState.AwaitingPin) return Action.None
+        this.pin = null
         lastChangeAt = clock()
         state = RunState.Confirming
-        return Action.Reply(pin)
+        return Action.Reply(pin, to = pinPrompt)
+    }
+
+    /**
+     * The PIN, entered before the menu is walked. It goes in by itself when bKash's summary shows the
+     * same recipient and amount as the flow; a fee the user hasn't seen holds it back for a go-ahead.
+     */
+    fun presetPin(pin: String): Action {
+        if (state is RunState.Finished || state == RunState.Confirming) return Action.None
+        this.pin = pin
+        val s = state as? RunState.AwaitingPin ?: return Action.None
+        if (s.feeToConfirm != null) return Action.None
+        return pinPrompt?.let(::usePresetPin) ?: Action.None
+    }
+
+    /** The user saw bKash's fee and still wants to go ahead with the PIN entered earlier. */
+    fun confirmFee(): Action {
+        val s = state as? RunState.AwaitingPin ?: return Action.None
+        val p = pin ?: return Action.None
+        if (s.feeToConfirm == null) return Action.None
+        return submitPin(p)
     }
 
     fun cancel(): Action {
+        pin = null
         val pinSent = state == RunState.Confirming
         if (state is RunState.Finished) return Action.None
         finish(if (pinSent) Outcome.Unknown("You closed Chalaiden after the PIN was sent.") else Outcome.Cancelled)
         return Action.Cancel
+    }
+
+    /** A reply (the PIN included) could not be typed because the USSD field was gone. Nothing reached bKash. */
+    fun onReplyUndelivered() {
+        if (state is RunState.Finished) return
+        finish(Outcome.Failed("bKash closed the menu before Chalaiden could answer. Nothing was sent.", pinSent = false))
     }
 
     /** The phone app's window went away without a final message. */
@@ -101,7 +152,7 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
                 finish(Outcome.Failed("The bKash session ended before payment. Nothing was charged.", pinSent = false))
             RunState.Confirming ->
                 finish(Outcome.Unknown("bKash didn't reply after the PIN."))
-            is RunState.Finished -> Unit
+            is RunState.Finished, RunState.Ready -> Unit
         }
     }
 
@@ -133,10 +184,44 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
             Step.Pin -> {
                 if (!Prompt.isPinPrompt(text)) return mismatch(text)
                 lastChangeAt = clock()
+                pinPrompt = text
                 state = RunState.AwaitingPin(Prompt.details(text), clock())
-                Action.None
+                if (pin != null) usePresetPin(text) else Action.None
             }
         }
+    }
+
+    /**
+     * Sends the PIN entered up front, but only into a summary that matches: the same recipient and
+     * amount as the flow. Anything else cancels (no money moves). A fee holds it for a go-ahead.
+     */
+    private fun usePresetPin(text: String): Action {
+        val p = pin ?: return Action.None
+        val details = Prompt.details(text).associate { (k, v) -> k.lowercase() to v }
+        flow.recipient?.let { want ->
+            if (digits(details["to"]) != digits(want)) return mismatch(text)
+        }
+        flow.amount?.let { want ->
+            if (amountOf(details["amount"]) != amountOf(want)) return mismatch(text)
+        }
+        // A fee Chalaiden can't read is shown too, rather than taken as free.
+        val fee = (details["fee"] ?: details["charge"])?.takeIf { amountOf(it).let { a -> a == null || a > 0.0 } }
+        if (fee != null) {
+            state = RunState.AwaitingPin(Prompt.details(text), clock(), feeToConfirm = fee)
+            return Action.None
+        }
+        return submitPin(p)
+    }
+
+    private fun digits(s: String?) = s?.filter { it.isDigit() }?.takeLast(11)
+
+    /**
+     * The one number in an amount ("Tk 1,000.00" -> 1000.0). Anything with more than one ("Tk 10 000")
+     * is unreadable rather than guessed, so it can only cancel, never match a different amount.
+     */
+    private fun amountOf(s: String?): Double? {
+        val numbers = Regex("""\d+(?:\.\d+)?""").findAll(s?.replace(",", "") ?: return null).toList()
+        return numbers.singleOrNull()?.value?.toDoubleOrNull()
     }
 
     private fun Dialog.textOrEmpty() = when (this) {
@@ -161,6 +246,7 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
     }
 
     private fun finish(outcome: Outcome) {
+        pin = null
         lastChangeAt = clock()
         state = RunState.Finished(outcome)
     }

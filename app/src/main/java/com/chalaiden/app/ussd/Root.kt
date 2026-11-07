@@ -3,40 +3,32 @@ package com.chalaiden.app.ussd
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.provider.Settings
 import androidx.core.content.ContextCompat
-import java.util.concurrent.TimeUnit
 
 /**
- * Root shortcuts for a rooted phone: grant Chalaiden's permissions and keep its Accessibility
- * service switched on (OxygenOS turns it off whenever the app is force-stopped).
- * Every call blocks on `su`, so run it off the main thread.
+ * Root setup for the USSD driver. Chalaiden drives the system dialog with root instead of an
+ * accessibility service, so there is deliberately no accessibility step here: nothing for
+ * bKash's app to flag. Every call blocks on `su`, so run it off the main thread.
  */
 object Root {
-    private val permissions = listOf(Manifest.permission.CALL_PHONE, Manifest.permission.READ_PHONE_STATE, Manifest.permission.CAMERA)
+    private val permissions = listOf(
+        Manifest.permission.CALL_PHONE,
+        Manifest.permission.READ_PHONE_STATE,
+        Manifest.permission.CAMERA,
+    )
 
-    fun run(command: String): Boolean = try {
-        val p = ProcessBuilder("su", "-c", command).redirectErrorStream(true).start()
-        p.waitFor(8, TimeUnit.SECONDS) && p.exitValue() == 0
-    } catch (e: Exception) {
-        false
-    }
-
-    /** Returns true when everything is in place afterwards (or already was). */
+    /** True when root works; grants Chalaiden's own permissions and the overlay appop along the way. */
     fun ensureSetup(context: Context): Boolean {
-        val pkg = context.packageName
-        val commands = permissions
-            .filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
-            .map { "pm grant $pkg $it" }
-            .toMutableList()
-        if (!UssdService.isEnabled(context)) {
-            val ours = "$pkg/${UssdService::class.java.name}"
-            val enabled = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-                .orEmpty().split(':').filter { it.isNotBlank() }
-            commands += "settings put secure enabled_accessibility_services '${(enabled + ours).distinct().joinToString(":")}'"
-            commands += "settings put secure accessibility_enabled 1"
+        val shell = RootShell.open() ?: return false
+        shell.use { sh ->
+            val pkg = context.packageName
+            permissions
+                .filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+                .forEach { sh.exec("pm grant $pkg $it") }
+            // The covering overlay is a normal "draw over other apps" window, granted here.
+            sh.exec("appops set $pkg SYSTEM_ALERT_WINDOW allow")
+            RootUssdDriver.restoreKeyboard(context, sh)
         }
-        if (commands.isEmpty()) return true
-        return run(commands.joinToString(" && "))
+        return true
     }
 }

@@ -3,10 +3,10 @@ package com.chalaiden.app.ussd
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.os.Bundle
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
 import android.telephony.SubscriptionManager
@@ -31,16 +31,15 @@ object Dialer {
         }.sortedBy { it.slot }
     }
 
-    /** Opens `*247#` on the chosen SIM. The phone app's USSD dialog takes it from there. */
-    @SuppressLint("MissingPermission")
-    fun dial(context: Context, subscriptionId: Int?) {
-        val telecom = context.getSystemService(TelecomManager::class.java)
-        val extras = Bundle()
-        accountFor(context, telecom, subscriptionId)?.let {
-            extras.putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, it)
+    /**
+     * Dials `*247#` on the chosen SIM. Started as an activity from Chalaiden in the foreground:
+     * OxygenOS only shows the USSD dialog for a foreground launch.
+     */
+    fun callIntent(context: Context, subscriptionId: Int?): Intent =
+        Intent(Intent.ACTION_CALL, Uri.fromParts("tel", Flows.CODE, null)).apply {
+            accountFor(context, context.getSystemService(TelecomManager::class.java), subscriptionId)
+                ?.let { putExtra(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, it) }
         }
-        telecom.placeCall(Uri.fromParts("tel", Flows.CODE, null), extras)
-    }
 
     @SuppressLint("MissingPermission")
     private fun accountFor(context: Context, telecom: TelecomManager, subscriptionId: Int?): PhoneAccountHandle? {
@@ -64,7 +63,8 @@ class Prefs(context: Context) {
         get() = sp.getInt("sim", -1).takeIf { it >= 0 }
         set(value) = sp.edit().putInt("sim", value ?: -1).apply()
 
-    var disclosureAccepted: Boolean
-        get() = sp.getBoolean("a11y_disclosure", false)
-        set(value) = sp.edit().putBoolean("a11y_disclosure", value).apply()
+    /** The keyboard a running session switched off, until it is switched back on. */
+    var imeToRestore: String?
+        get() = sp.getString("ime_to_restore", null)
+        set(value) { sp.edit().putString("ime_to_restore", value).commit() }
 }

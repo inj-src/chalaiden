@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathBuilder
+import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 
@@ -46,17 +47,29 @@ object AppIcons {
 
     val Send = stroke("send") { moveTo(7f, 17f); lineTo(17f, 7f); moveTo(9f, 7f); lineTo(17f, 7f); lineTo(17f, 15f) }
 
-    /** Wallet: check balance. */
-    val Wallet = stroke("wallet") {
-        moveTo(4f, 7.5f); lineTo(4f, 18f); lineTo(20f, 18f); lineTo(20f, 7.5f); close()
-        moveTo(4f, 7.5f); lineTo(16.5f, 4.5f); lineTo(17f, 7.5f)
-        moveTo(15.5f, 12.75f); lineTo(16.5f, 12.75f)
-    }
+    /** Wallet with its clasp: check balance. */
+    val Wallet = svg(
+        "wallet",
+        "M20 9V7a2.5 2.5 0 0 0-2.5-2.5H6A2.5 2.5 0 0 0 3.5 7v10A2.5 2.5 0 0 0 6 19.5h11.5A2.5 2.5 0 0 0 20 17v-2",
+        "M15.5 9h5v6h-5a3 3 0 0 1 0-6z",
+        "M15.75 12h.01",
+    )
 
-    val Sim = stroke("sim") {
-        moveTo(6f, 3.5f); lineTo(14.5f, 3.5f); lineTo(18f, 7f); lineTo(18f, 20.5f); lineTo(6f, 20.5f); close()
-        moveTo(9f, 11f); lineTo(15f, 11f); lineTo(15f, 17f); lineTo(9f, 17f); close()
-    }
+    /** A banknote dropping into an open hand: cash handed over by an agent. */
+    val CashOut = svg(
+        "cash-out",
+        "M7 3.5h11a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2z",
+        "M11.1 7.5a1.4 1.4 0 1 0 2.8 0a1.4 1.4 0 1 0-2.8 0",
+        "M2.5 14.5h3l4.25 1.5H13a1.6 1.6 0 0 1 0 3.2H9.5",
+        "M13.3 18.4l4.7-2.6a1.6 1.6 0 0 1 2 2.4l-5.8 3.3H2.5",
+    )
+
+    /** A SIM card: rounded, clipped corner, chip. */
+    val Sim = svg(
+        "sim",
+        "M7.5 3h7l4.5 4.5V19a2 2 0 0 1-2 2H7.5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z",
+        "M10.15 11h3.7a1.4 1.4 0 0 1 1.4 1.4v3.7a1.4 1.4 0 0 1-1.4 1.4h-3.7a1.4 1.4 0 0 1-1.4-1.4v-3.7a1.4 1.4 0 0 1 1.4-1.4z",
+    )
 
     val Torch = stroke("torch") { moveTo(13f, 3f); lineTo(6.5f, 13.5f); lineTo(12f, 13.5f); lineTo(11f, 21f); lineTo(17.5f, 10.5f); lineTo(12f, 10.5f); close() }
 
@@ -74,6 +87,20 @@ object AppIcons {
         moveTo(8f, 5f); lineTo(5.5f, 5f); lineTo(5.5f, 20.5f); lineTo(18.5f, 20.5f); lineTo(18.5f, 5f); lineTo(16f, 5f)
         moveTo(9f, 3.5f); lineTo(15f, 3.5f); lineTo(15f, 6.5f); lineTo(9f, 6.5f); close()
     }
+
+    /** Same stroke as [stroke], from SVG path data (easier for curves and rounded corners). */
+    private fun svg(name: String, vararg d: String): ImageVector =
+        ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
+            d.forEach {
+                addPath(
+                    pathData = addPathNodes(it),
+                    stroke = SolidColor(Color.Black),
+                    strokeLineWidth = 2.2f,
+                    strokeLineCap = StrokeCap.Round,
+                    strokeLineJoin = StrokeJoin.Round,
+                )
+            }
+        }.build()
 
     private fun stroke(name: String, block: PathBuilder.() -> Unit): ImageVector =
         ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).path(

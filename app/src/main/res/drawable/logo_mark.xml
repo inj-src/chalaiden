@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launcher mark (ic_launcher_foreground) cropped to its own bounds, for use inside the app. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="42dp" android:height="36dp" android:viewportWidth="42" android:viewportHeight="36">
+    <group android:translateX="-32.55" android:translateY="-36">
+        <path android:strokeColor="#FFFFFF" android:strokeWidth="7.875" android:strokeLineCap="round"
+            android:fillColor="#00000000"
+            android:pathData="M60.975,45.063 A13.359,13.359 0 1,0 60.975,62.937" />
+        <path android:fillColor="#3D7EFF"
+            android:pathData="M68.906,49.5 a4.5,4.5 0 1,1 0,9 a4.5,4.5 0 1,1 0,-9 z" />
+    </group>
+</vector>

@@ -5,6 +5,22 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.net.Uri
+import android.util.Size
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.spring
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
+import com.chalaiden.app.ocr.LiveNumber
+import kotlinx.coroutines.delay
 import android.os.Build
 import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -105,15 +121,25 @@ private fun Camera(onRead: (NumberRead) -> Unit, onTypeInstead: () -> Unit, onGa
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current
     val t = tokens
-    var live by remember { mutableStateOf<String?>(null) }
+    var live by remember { mutableStateOf<LiveNumber?>(null) }
     var torch by remember { mutableStateOf(false) }
     var camera by remember { mutableStateOf<Camera?>(null) }
+    var guide by remember { mutableStateOf<Rect?>(null) }
     val executor = remember { Executors.newSingleThreadExecutor() }
+    val main = remember { ContextCompat.getMainExecutor(context) }
+    // A capture posted just as the scanner closes must not navigate from whatever screen is next.
+    val open = remember { java.util.concurrent.atomic.AtomicBoolean(true) }
     val analyzer = remember {
         NumberAnalyzer(
-            onLive = { live = it },
-            onCaptured = { read -> ContextCompat.getMainExecutor(context).execute { onRead(read) } },
+            onLive = { seen -> main.execute { if (seen != null) live = seen } },
+            onCaptured = { read -> main.execute { if (open.getAndSet(false)) onRead(read) } },
         )
+    }
+    // Kept through a missed frame or two: OCR drops a number now and then even when it is in view.
+    LaunchedEffect(live) {
+        if (live == null) return@LaunchedEffect
+        delay(NumberAnalyzer.FRESH_MILLIS)
+        live = null
     }
     val previewView = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } }
 
@@ -121,20 +147,31 @@ private fun Camera(onRead: (NumberRead) -> Unit, onTypeInstead: () -> Unit, onGa
         val providerFuture = ProcessCameraProvider.getInstance(context)
         providerFuture.addListener({
             val provider = providerFuture.get()
-            val preview = Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
+            // Preview and analysis share one 4:3 frame, so a box found in the frame lands on the preview.
+            fun selector(size: Size) = ResolutionSelector.Builder()
+                .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+                .setResolutionStrategy(ResolutionStrategy(size, ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER))
+                .build()
+            val preview = Preview.Builder().setResolutionSelector(selector(Size(1920, 1440))).build()
+                .also { it.surfaceProvider = previewView.surfaceProvider }
             val analysis = ImageAnalysis.Builder()
+                .setResolutionSelector(selector(Size(1280, 960))) // sharp enough for a clear crop, quick to read
+                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                .setOutputImageRotationEnabled(true)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build().also { it.setAnalyzer(executor, analyzer) }
             provider.unbindAll()
             camera = provider.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
-        }, ContextCompat.getMainExecutor(context))
+        }, main)
         onDispose {
+            open.set(false)
             ProcessCameraProvider.getInstance(context).get().unbindAll()
             executor.shutdown()
         }
     }
 
     AndroidView({ previewView }, Modifier.fillMaxSize())
+    NumberBox(live, guide, Modifier.fillMaxSize())
 
     Column(Modifier.fillMaxSize().systemBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -154,11 +191,15 @@ private fun Camera(onRead: (NumberRead) -> Unit, onTypeInstead: () -> Unit, onGa
             modifier = Modifier.padding(horizontal = 28.dp),
         )
         Spacer(Modifier.height(16.dp))
-        Viewfinder(locked = live != null, modifier = Modifier.padding(horizontal = 24.dp).fillMaxWidth().aspectRatio(3.2f))
+        // Where the brackets rest while no number is in view.
+        Spacer(
+            Modifier.padding(horizontal = 24.dp).fillMaxWidth().aspectRatio(3.2f)
+                .onGloballyPositioned { guide = it.boundsInRoot() },
+        )
         Spacer(Modifier.height(16.dp))
         Box(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 24.dp), contentAlignment = Alignment.Center) {
             val l = live
-            if (l != null) NumberRail(l, compact = true)
+            if (l != null) NumberRail(l.number, groups = l.groups, compact = true)
             else Text("Looking for an 11-digit number…", style = Type.body, color = Color.White.copy(alpha = 0.8f))
         }
         Spacer(Modifier.weight(1f))
@@ -169,10 +210,12 @@ private fun Camera(onRead: (NumberRead) -> Unit, onTypeInstead: () -> Unit, onGa
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             CircleButton(AppIcons.Photo, "From photo", size = 56, onClick = onGallery)
+            // The ring turns to the accent once a number is in view: pressing now takes it.
+            val ring by animateColorAsState(if (live != null) t.accent else Color.White, label = "shutter")
             Box(
-                Modifier.size(76.dp).clip(CircleShape).border(4.dp, Color.White, CircleShape).padding(8.dp).clip(CircleShape)
-                    .background(Color.White).clickable(role = Role.Button) { analyzer.captureNow = true }
-                    .semantics { contentDescription = "Capture now" },
+                Modifier.size(76.dp).clip(CircleShape).border(4.dp, ring, CircleShape).padding(8.dp).clip(CircleShape)
+                    .background(Color.White).clickable(role = Role.Button) { analyzer.capture() }
+                    .semantics { contentDescription = if (live != null) "Use this number" else "Take photo" },
             )
             CircleButton(AppIcons.Dialpad, "Type it", size = 56, onClick = onTypeInstead)
         }
@@ -192,21 +235,70 @@ private fun CircleButton(icon: ImageVector, label: String, size: Int = 44, activ
     }
 }
 
-/** Corner brackets around the strip where the printed number should sit. */
+/**
+ * Corner brackets that rest on [guide] while nothing is found, then move onto the number in view,
+ * following its tilt, and back when it leaves. [live] is in camera-frame pixels; the preview fills
+ * the screen centre-cropped (FILL_CENTER), and the same scale maps the box onto it.
+ */
 @Composable
-private fun Viewfinder(locked: Boolean, modifier: Modifier) {
-    val color = if (locked) tokens.accent else Color.White
-    Canvas(modifier) {
-        val len = size.height * 0.28f
-        val w = 4.dp.toPx()
-        listOf(
-            Offset(0f, 0f) to Offset(1f, 1f), Offset(size.width, 0f) to Offset(-1f, 1f),
-            Offset(0f, size.height) to Offset(1f, -1f), Offset(size.width, size.height) to Offset(-1f, -1f),
-        ).forEach { (o, d) ->
-            drawLine(color, o, Offset(o.x + d.x * len, o.y), w, StrokeCap.Round)
-            drawLine(color, o, Offset(o.x, o.y + d.y * len), w, StrokeCap.Round)
+private fun NumberBox(live: LiveNumber?, guide: Rect?, modifier: Modifier) {
+    val accent = tokens.accent
+    var canvas by remember { mutableStateOf(IntSize.Zero) }
+    val corners = remember { List(4) { Animatable(Offset.Zero, Offset.VectorConverter) } }
+    var placed by remember { mutableStateOf(false) }
+    val color by animateColorAsState(if (live != null) accent else Color.White, label = "brackets")
+
+    val target: List<Offset>? = when {
+        live != null && canvas != IntSize.Zero -> onScreen(live, canvas)
+        guide != null -> listOf(guide.topLeft, guide.topRight, guide.bottomRight, guide.bottomLeft)
+        else -> null
+    }
+    LaunchedEffect(target) {
+        target ?: return@LaunchedEffect
+        if (!placed) {
+            corners.zip(target).forEach { (a, p) -> a.snapTo(p) }
+            placed = true
+            return@LaunchedEffect
+        }
+        corners.zip(target).forEach { (a, p) ->
+            launch { a.animateTo(p, spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow)) }
         }
     }
+
+    Canvas(modifier.onSizeChanged { canvas = it }) {
+        if (!placed) return@Canvas
+        val c = corners.map { it.value }
+        val side = ((c[3] - c[0]).getDistance() + (c[2] - c[1]).getDistance()) / 2f
+        val top = ((c[1] - c[0]).getDistance() + (c[2] - c[3]).getDistance()) / 2f
+        val arm = (side * 0.3f).coerceAtMost(top * 0.25f).coerceAtLeast(10.dp.toPx())
+        val w = 4.dp.toPx()
+        for (i in 0..3) {
+            val p = c[i]
+            // Along the top or bottom edge, and along the side edge, from this corner.
+            val along = c[if (i % 2 == 0) i + 1 else i - 1]
+            val across = c[3 - i]
+            for (q in listOf(along, across)) {
+                val d = q - p
+                val len = d.getDistance().takeIf { it > 0f } ?: continue
+                drawLine(color, p, p + d * (arm / len), w, StrokeCap.Round)
+            }
+        }
+    }
+}
+
+/** The live number's corners on screen, padded out so the brackets sit around the digits, not on them. */
+private fun onScreen(live: LiveNumber, view: IntSize): List<Offset> {
+    val scale = maxOf(view.width / live.frameWidth.toFloat(), view.height / live.frameHeight.toFloat())
+    val dx = (view.width - live.frameWidth * scale) / 2f
+    val dy = (view.height - live.frameHeight * scale) / 2f
+    val s = live.span
+    val q = listOf(s.tl, s.tr, s.br, s.bl).map { Offset(it.x * scale + dx, it.y * scale + dy) }
+    val h = ((q[3] - q[0]).getDistance() + (q[2] - q[1]).getDistance()) / 2f
+    val ux = ((q[1] - q[0]) + (q[2] - q[3])).let { it / it.getDistance().coerceAtLeast(1f) }
+    val uy = ((q[3] - q[0]) + (q[2] - q[1])).let { it / it.getDistance().coerceAtLeast(1f) }
+    val a = ux * (h * 0.5f)
+    val b = uy * (h * 0.45f)
+    return listOf(q[0] - a - b, q[1] + a - b, q[2] + a + b, q[3] - a + b)
 }
 
 @Composable

@@ -42,6 +42,7 @@ import androidx.core.content.FileProvider
 import androidx.core.content.res.ResourcesCompat
 import com.chalaiden.app.R
 import com.chalaiden.app.ui.components.NumberRail
+import com.chalaiden.app.ui.components.PhoneGroups
 import com.chalaiden.app.ui.components.AppIcons
 import com.chalaiden.app.ui.components.PopIn
 import com.chalaiden.app.ui.components.SuccessBadge
@@ -111,7 +112,7 @@ fun ResultScreen(flow: UssdFlow, outcome: Outcome, onRetry: () -> Unit, onCheckB
             bigAmount?.let { Text("Tk $it", style = Type.amount, color = fg) }
             flow.recipient?.let {
                 Spacer(Modifier.height(12.dp))
-                NumberRail(it, compact = true)
+                NumberRail(it, groups = flow.groups ?: PhoneGroups, compact = true)
             }
             Spacer(Modifier.height(20.dp))
             if (outcome is Outcome.Success && outcome.trxId != null) {
@@ -174,10 +175,15 @@ private fun describe(flow: UssdFlow, outcome: Outcome): Pair<String, String?> {
     val done = when (flow.kind) {
         FlowKind.Payment -> "Paid"
         FlowKind.SendMoney -> "Sent"
+        FlowKind.CashOut -> "Cashed out"
         FlowKind.Balance -> "Your balance"
     }
     return when (outcome) {
-        is Outcome.Success -> done to if (flow.kind == FlowKind.Payment) "Show this screen to the shop." else null
+        is Outcome.Success -> done to when (flow.kind) {
+            FlowKind.Payment -> "Show this screen to the shop."
+            FlowKind.CashOut -> "Show this screen to the agent."
+            else -> null
+        }
         is Outcome.Failed -> if (outcome.pinSent) {
             "Not completed" to "bKash turned this down after your PIN. Read its message below before trying again."
         } else if (outcome.menuMissing) {
@@ -209,7 +215,14 @@ private fun shareReceipt(context: Context, flow: UssdFlow, outcome: Outcome.Succ
     c.drawText("chalaiden", 80f, 135f, Paint(ink).apply { color = 0xFFF2FBF9.toInt(); isFakeBoldText = true })
     var y = 340f
     soft.textSize = 40f
-    c.drawText(if (flow.kind == FlowKind.Payment) "Payment" else "Send Money", 80f, y, soft)
+    c.drawText(
+        when (flow.kind) {
+            FlowKind.Payment -> "Payment"
+            FlowKind.CashOut -> "Cash Out"
+            else -> "Send Money"
+        },
+        80f, y, soft,
+    )
     y += 120f
     ink.textSize = 110f
     c.drawText("Tk ${"%,d".format(flow.amount?.toLongOrNull() ?: 0)}", 80f, y, Paint(ink).apply { isFakeBoldText = true })

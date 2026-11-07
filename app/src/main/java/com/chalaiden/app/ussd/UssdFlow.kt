@@ -12,7 +12,7 @@ sealed interface Step {
     data object Pin : Step
 }
 
-enum class FlowKind { Payment, SendMoney, Balance }
+enum class FlowKind { Payment, SendMoney, CashOut, Balance }
 
 data class UssdFlow(
     val kind: FlowKind,
@@ -20,6 +20,8 @@ data class UssdFlow(
     val recipient: String? = null,
     val amount: String? = null,
     val reference: String? = null,
+    /** How the shop's card groups [recipient]'s digits (e.g. 5-3-3), for display only; null for the usual 3-4-4. */
+    val groups: List<Int>? = null,
 )
 
 object Flows {
@@ -32,8 +34,12 @@ object Flows {
      */
     const val DEFAULT_REFERENCE = "ZQX7K"
 
-    /** Characters bKash takes in a reference; anything else is dropped as the user types. */
-    fun cleanReference(input: String): String = input.filter { it.isLetterOrDigit() || it == ' ' }.take(20)
+    /**
+     * Characters bKash takes in a reference and `input text` can type: ASCII letters, digits and
+     * spaces. Anything else is dropped as the user types.
+     */
+    fun cleanReference(input: String): String =
+        input.filter { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == ' ' }.trimStart().take(20)
 
     /** True for the placeholder above, however bKash echoes it back. */
     fun isDefaultReference(value: String?): Boolean = value?.trim().equals(DEFAULT_REFERENCE, ignoreCase = true)
@@ -69,6 +75,19 @@ object Flows {
             recipient = receiver, amount = amount, reference = ref,
         )
     }
+
+    /** Cash out at an agent (Grameenphone, 2026-11-05): Cash Out → From Agent → agent number → amount → PIN. */
+    fun cashOut(agent: String, amount: String): UssdFlow = UssdFlow(
+        kind = FlowKind.CashOut,
+        steps = listOf(
+            Step.Pick("Cash Out"),
+            Step.Pick("From Agent"),
+            Step.Answer(rx("agent.*account no"), agent, "Entering agent number"),
+            Step.Answer(rx("enter amount"), amount, "Entering amount"),
+            Step.Pin,
+        ),
+        recipient = agent, amount = amount,
+    )
 
     fun balance(): UssdFlow = UssdFlow(
         kind = FlowKind.Balance,

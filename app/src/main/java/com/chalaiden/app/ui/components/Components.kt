@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -196,12 +197,24 @@ fun PinDots(filled: Int, length: Int, modifier: Modifier = Modifier) {
  * for something that moves money.
  */
 @Composable
-fun HoldToConfirm(label: String, enabled: Boolean, modifier: Modifier = Modifier, onConfirmed: () -> Unit) {
+fun HoldToConfirm(
+    label: String,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    /** The finger went down; work that should start early (warming up the bKash menu) starts here. */
+    onHoldStart: () -> Unit = {},
+    /** Let go before the hold completed; undo whatever [onHoldStart] began. */
+    onHoldCancel: () -> Unit = {},
+    onConfirmed: () -> Unit,
+) {
     val t = tokens
     val haptics = LocalHapticFeedback.current
     val progress = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     var done by remember { mutableStateOf(false) }
+    // The gesture below outlives recompositions; it must see the button as it is now.
+    val enabledNow by rememberUpdatedState(enabled)
+    val confirmedNow by rememberUpdatedState(onConfirmed)
     Box(
         modifier
             .fillMaxWidth()
@@ -213,18 +226,25 @@ fun HoldToConfirm(label: String, enabled: Boolean, modifier: Modifier = Modifier
                 if (!enabled) return@pointerInput
                 awaitEachGesture {
                     awaitFirstDown()
+                    if (!done) onHoldStart()
                     val job = scope.launch {
                         progress.animateTo(1f, tween(900, easing = LinearEasing))
-                        if (!done) {
+                        if (!done && enabledNow) {
                             done = true
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onConfirmed()
+                            confirmedNow()
                         }
                     }
-                    waitForUpOrCancellation()
-                    if (!done) {
-                        job.cancel()
-                        scope.launch { progress.animateTo(0f, tween(200)) }
+                    // Also runs when the button is disabled mid-hold (e.g. a PIN digit deleted with a
+                    // second finger): that restarts this gesture, and the fill must stop with it.
+                    try {
+                        waitForUpOrCancellation()
+                    } finally {
+                        if (!done) {
+                            job.cancel()
+                            onHoldCancel()
+                            scope.launch { progress.animateTo(0f, tween(200)) }
+                        }
                     }
                 }
             },

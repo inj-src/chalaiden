@@ -10,13 +10,22 @@ object NumberExtractor {
 
     /** All distinct numbers found in [line], in reading order. */
     fun find(line: String): List<String> {
-        // Only fix lookalikes in lines that are mostly digits, so words stay words.
-        val compact = line.filterNot { it.isWhitespace() || it == '-' || it == '.' || it == '+' }
-        val digitShare = compact.count { it.isDigit() }.toFloat() / compact.length.coerceAtLeast(1)
-        val normalized = if (digitShare >= 0.7f) compact.map { lookalikes[it] ?: it }.joinToString("") else compact
+        val compact = compact(line)
+        val normalized = if (isLenient(line)) compact.map { lookalikes[it] ?: it }.joinToString("") else compact
         val digits = normalized.filter { it.isDigit() || it.isLetter() }.split(Regex("[^0-9]+")).joinToString(" ")
         return digits.split(' ').flatMap { run -> mobile.findAll(run).map { it.groupValues[1] }.toList() }.distinct()
     }
+
+    /** Only fix lookalikes in text that is mostly digits, so words stay words. */
+    fun isLenient(text: String): Boolean {
+        val compact = compact(text)
+        return compact.count { it.isDigit() }.toFloat() / compact.length.coerceAtLeast(1) >= 0.7f
+    }
+
+    /** [c] as a digit, reading lookalike letters as digits when [lenient]; null for anything else. */
+    fun digitOf(c: Char, lenient: Boolean): Char? = if (c.isDigit()) c else if (lenient) lookalikes[c] else null
+
+    private fun compact(text: String) = text.filterNot { it.isWhitespace() || it == '-' || it == '.' || it == '+' }
 
     fun isValid(number: String) = Regex("""01[3-9]\d{8}""").matches(number)
 }

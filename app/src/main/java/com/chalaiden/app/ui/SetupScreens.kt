@@ -2,7 +2,6 @@ package com.chalaiden.app.ui
 
 import android.content.Intent
 import android.net.Uri
-import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -50,11 +49,10 @@ import com.chalaiden.app.ussd.Prefs
 import com.chalaiden.app.ussd.Sim
 import com.chalaiden.app.ussd.Step
 import com.chalaiden.app.ussd.UssdFlow
-import com.chalaiden.app.ussd.UssdService
 
 /** Three things Chalaiden needs before it can answer bKash by itself, in the order it needs them. */
 @Composable
-fun SetupScreen(prefs: Prefs, onDone: () -> Unit, onManual: (() -> Unit)?, onBack: () -> Unit) {
+fun SetupScreen(prefs: Prefs, rootOk: Boolean, onRetryRoot: () -> Unit, onDone: () -> Unit, onManual: (() -> Unit)?, onBack: () -> Unit) {
     val t = tokens
     val context = LocalContext.current
     var tick by remember { mutableIntStateOf(0) } // bumps on resume so checks re-run
@@ -65,8 +63,6 @@ fun SetupScreen(prefs: Prefs, onDone: () -> Unit, onManual: (() -> Unit)?, onBac
     val sims = remember(tick) { Dialer.sims(context) }
     var simId by remember(tick) { mutableStateOf(prefs.simSubscriptionId?.takeIf { id -> sims.any { it.subscriptionId == id } }) }
     if (simId == null && sims.size == 1) { simId = sims.first().subscriptionId; prefs.simSubscriptionId = simId }
-    val serviceOn = remember(tick) { UssdService.isEnabled(context) }
-    var disclosed by remember { mutableStateOf(prefs.disclosureAccepted) }
 
     Column(Modifier.fillMaxSize().background(t.bg).systemBarsPadding()) {
         TopBar("Set up", onBack)
@@ -79,33 +75,20 @@ fun SetupScreen(prefs: Prefs, onDone: () -> Unit, onManual: (() -> Unit)?, onBac
                 if (phoneOk) sims.forEach { sim -> SimRow(sim, sim.subscriptionId == simId) { simId = sim.subscriptionId; prefs.simSubscriptionId = simId } }
                 if (phoneOk && sims.isEmpty()) Text("No SIM found. Insert your bKash SIM.", style = Type.body, color = t.error)
             }
-            SetupStep(3, "Answer bKash for you", serviceOn,
-                "Chalaiden uses Android's Accessibility service to read the bKash *247# messages your phone shows and type your answers into them. " +
-                    "It only looks at the phone app's USSD messages, never other apps, and nothing leaves your phone. Your PIN is never saved.") {
-                if (!serviceOn) {
-                    if (!disclosed) {
-                        PrimaryButton("I agree") { disclosed = true; prefs.disclosureAccepted = true }
-                    } else {
-                        PrimaryButton("Open Accessibility settings") {
-                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "Find Chalaiden under Downloaded apps and turn it on. If Android says it's a restricted setting, " +
-                                "open App info for Chalaiden, tap ⋮, and choose Allow restricted settings.",
-                            style = Type.label, color = t.inkSoft,
-                        )
-                        Text("Open App info", style = Type.button, color = t.accent,
-                            modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable {
-                                context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
-                            }.padding(vertical = 10.dp))
-                    }
+            SetupStep(3, "Root access", rootOk,
+                "Chalaiden answers the bKash *247# menu for you with root, behind its own screen. " +
+                    "No Accessibility service is used, so the bKash app keeps working. Your PIN is never saved.") {
+                if (!rootOk) {
+                    PrimaryButton("Grant root", onClick = onRetryRoot)
+                    Spacer(Modifier.height(8.dp))
+                    Text("Allow Chalaiden in your root manager (APatch, Magisk, KernelSU) when it asks.",
+                        style = Type.label, color = t.inkSoft)
                 }
             }
         }
         Column(Modifier.padding(20.dp)) {
-            PrimaryButton("Done", enabled = phoneOk && simId != null && serviceOn, onClick = onDone)
-            if (onManual != null && !serviceOn) {
+            PrimaryButton("Done", enabled = phoneOk && simId != null && rootOk, onClick = onDone)
+            if (onManual != null && !rootOk) {
                 Text("Do it by hand this time", style = Type.button, color = t.accent,
                     modifier = Modifier.align(Alignment.CenterHorizontally).clip(RoundedCornerShape(10.dp))
                         .clickable(onClick = onManual).padding(14.dp))
@@ -149,7 +132,10 @@ private fun SimRow(sim: Sim, selected: Boolean, onClick: () -> Unit) {
 }
 
 /** Menu positions seen on Grameenphone, 2026-11-02. Only a hint; the automatic flow picks by label. */
-private val MENU_NUMBERS = mapOf("Payment" to "4", "Send Money" to "1", "My bKash" to "9", "Check Balance" to "1")
+private val MENU_NUMBERS = mapOf(
+    "Payment" to "4", "Send Money" to "1", "Cash Out" to "5", "From Agent" to "1",
+    "My bKash" to "9", "Check Balance" to "1",
+)
 
 /** Fallback when automatic answering is off: the exact replies to type, in order. */
 @Composable
@@ -183,7 +169,7 @@ fun ManualScreen(flow: UssdFlow, simId: Int?, onBack: () -> Unit) {
             }
         }
         PrimaryButton("Open bKash menu", modifier = Modifier.padding(20.dp)) {
-            if (Dialer.hasPermissions(context)) Dialer.dial(context, simId)
+            if (Dialer.hasPermissions(context)) context.startActivity(Dialer.callIntent(context, simId))
             else context.startActivity(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", "*247#", null)))
         }
     }
