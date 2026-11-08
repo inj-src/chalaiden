@@ -105,14 +105,17 @@ object GuideSession {
 
     /** How a guide ended. */
     enum class End {
-        /** Done on the card's last step. */
-        Done,
-
         /** The card's ✕: the user may carry on in bKash by hand, so nothing is assumed about bKash. */
         Closed,
 
         /** bKash's dialog went away: Cancel, a finished payment, bKash timing out. */
         Gone,
+
+        /**
+         * bKash answered the PIN with a new prompt (its receipt or balance, with "0. Main Menu"). That
+         * answer is still a live menu: closing it leaves the session open, as a Cancel does.
+         */
+        Answered,
     }
 
     private val _state = MutableStateFlow<State?>(null)
@@ -122,9 +125,6 @@ object GuideSession {
 
     /** True while Chalaiden's own screen is in front; the floating card stays hidden then. */
     val appVisible: StateFlow<Boolean> = _appVisible.asStateFlow()
-
-    /** Set when the user taps Done on the card, so the activity can go home when it comes back. */
-    @Volatile private var finished = false
 
     /** Where "bKash was left with an open session" is kept between guides (and app restarts). */
     @Volatile private var prefs: Prefs? = null
@@ -136,7 +136,6 @@ object GuideSession {
 
     /** Starts the guide for [flow] at its first step: every dial opens bKash's menu from the top. */
     fun start(flow: UssdFlow, now: Long = System.currentTimeMillis()) {
-        finished = false
         val old = prefs?.let { p -> Lifecycle.stillOpen(p.bkashLeftOpenAt, now).also { p.bkashLeftOpenAt = 0L } } ?: false
         _state.value = State(flow, Guide.steps(flow, oldSession = old))
     }
@@ -154,7 +153,7 @@ object GuideSession {
     /** The user changed the reply the keyboard typed. */
     fun edited() = update { if (it.filled == it.index) it.copy(edited = true) else it }
 
-    /** The keyboard handed over for the PIN: the card shows that step. */
+    /** bKash asked for the PIN: the card shows that step. */
     fun reached(index: Int) = go(index)
 
     /**
@@ -163,13 +162,9 @@ object GuideSession {
      */
     fun end(how: End, at: Long = System.currentTimeMillis()) {
         val last = _state.value ?: return
-        finished = how == End.Done
         if (Lifecycle.leftOpen(last, how, at)) prefs?.bkashLeftOpenAt = at
         _state.value = null
     }
-
-    /** True once after the card's Done, then false. */
-    fun consumeFinished(): Boolean = finished.also { finished = false }
 
     fun setAppVisible(visible: Boolean) { _appVisible.value = visible }
 
@@ -184,7 +179,8 @@ object GuideSession {
      * What bKash is left holding when a guide ends, worked out from the steps alone. Measured on
      * Grameenphone, 2026-11-08: cancelling after one or more replies, or at the PIN, leaves the session
      * open, and the next `*247#` first asks "Do you want to continue?". Cancelling at the very first menu
-     * leaves nothing. Answering that question (either way) or cancelling it clears it.
+     * leaves nothing. Answering that question (either way) or cancelling it clears it. Seen again the
+     * same day: cancelling bKash's answer to the PIN (the balance, with "0. Main Menu") leaves it open too.
      */
     object Lifecycle {
         /** How long bKash is taken to keep an open session. A guess; past it, the No step isn't added. */
@@ -197,6 +193,7 @@ object GuideSession {
         const val QUICK_PIN_CANCEL_MILLIS = 7_000L
 
         fun leftOpen(state: State, how: End, at: Long): Boolean {
+            if (how == End.Answered) return true
             if (how != End.Gone) return false
             state.pinAt?.let { return at - it < QUICK_PIN_CANCEL_MILLIS }
             // Past the first menu means a reply went through. The No to an old session doesn't count:
@@ -217,8 +214,17 @@ sealed interface KeyMove {
     /** Type [text] as step [index]'s reply. */
     data class Type(val text: String, val index: Int) : KeyMove
 
-    /** Switch back to the user's own keyboard; [index] is the step reached, if it's the PIN. */
+    /** Switch back to the user's own keyboard. */
     data class HandBack(val index: Int? = null) : KeyMove
+
+    /**
+     * bKash asks for the PIN (step [index]): stay up and show the PIN pad. The user types it; Chalaiden
+     * only passes each digit into bKash's box and never types, reads back or keeps the PIN itself.
+     */
+    data class PinPad(val index: Int) : KeyMove
+
+    /** bKash answered the PIN with a new box: the guide is over, and the keyboard steps aside. */
+    data object Finished : KeyMove
 }
 
 object KeyboardFill {
@@ -231,14 +237,17 @@ object KeyboardFill {
      * after a reply was typed means bKash has moved on to the next step. Unless the user changed that
      * reply: then it answered a question bKash slipped in ("Do you want to continue?", "Invalid amount,
      * try again"), and the step it was meant for is still to come, so the same reply is typed again.
+     * [pinSent]: the PIN box closed with digits in it. The PIN is the last step, so a new box after it
+     * is bKash's answer ("Current balance… 0. Main Menu"), not another PIN prompt.
      */
-    fun decide(guide: GuideSession.State?, inPhone: Boolean, empty: Boolean): KeyMove {
+    fun decide(guide: GuideSession.State?, inPhone: Boolean, empty: Boolean, pinSent: Boolean = false): KeyMove {
         if (guide == null || !inPhone) return KeyMove.HandBack()
         if (!empty) return KeyMove.None
+        if (pinSent && guide.step.kind == GuideStep.Kind.Pin) return KeyMove.Finished
         val index = if (guide.filled == guide.index && !guide.edited) guide.index + 1 else guide.index
         val step = guide.steps.getOrNull(index) ?: return KeyMove.HandBack()
-        // The PIN is always typed on the user's own keyboard, never through Chalaiden.
-        if (step.kind == GuideStep.Kind.Pin) return KeyMove.HandBack(index)
+        // The PIN is never filled in: the user types it on the keyboard's PIN pad.
+        if (step.kind == GuideStep.Kind.Pin) return KeyMove.PinPad(index)
         return step.fill?.let { KeyMove.Type(it, index) } ?: KeyMove.None
     }
 }

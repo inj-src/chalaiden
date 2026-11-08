@@ -314,7 +314,7 @@ private fun rootPages(rootOk: Boolean, onRecheck: () -> Unit) = listOf(
 private fun guidedPages(context: Context, canFloat: Boolean, keyboardOn: Boolean) = listOf(
     GuidePage(
         title = "Turn on the Chalaiden keyboard",
-        body = "It types each reply into bKash's box for you, and hands back to your own keyboard for the PIN. " +
+        body = "It types each reply into bKash's box for you, and gives you a PIN pad when bKash asks for your PIN. " +
             "Switch on Chalaiden in Settings → Keyboards. Before each payment, pick it when Chalaiden asks.",
         art = { AutoFillArt() },
         done = keyboardOn,
@@ -332,8 +332,8 @@ private fun guidedPages(context: Context, canFloat: Boolean, keyboardOn: Boolean
     ),
     GuidePage(
         title = "Your PIN, typed by you",
-        body = "Check each reply and tap Send. At the PIN, your own keyboard comes back: type it into bKash's box " +
-            "yourself. Chalaiden never sees it.",
+        body = "Check each reply and tap Send. At the PIN, the keyboard turns into a PIN pad: you type it, and " +
+            "each digit goes straight into bKash's box. Chalaiden never fills it in and keeps nothing.",
         art = { PinArt() },
     ),
 )

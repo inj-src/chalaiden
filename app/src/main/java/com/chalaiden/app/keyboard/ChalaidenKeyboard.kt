@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,12 +26,20 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import com.chalaiden.app.ui.components.PinDots
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.LocalDensity
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.ViewCompat
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -58,8 +65,9 @@ import kotlinx.coroutines.launch
 
 /**
  * Guided mode's keyboard. While a guide runs it types each reply into bKash's USSD box by itself, so
- * the user only checks it and taps Send. It works only there: anywhere else, and for the PIN, it
- * switches straight back to the user's own keyboard. It keeps nothing it types.
+ * the user only checks it and taps Send. At the PIN it shows a PIN pad: the user types the PIN, and each
+ * digit goes straight into bKash's box. It never fills the PIN in, reads it back or keeps it, and keeps
+ * nothing else it types either. Anywhere but bKash's box it switches straight back to the user's own keyboard.
  *
  * Android lets only the user pick a keyboard, so Chalaiden shows the picker before it dials
  * ([ChalaidenKeyboard.pick]); this is the only way to type into another app without root,
@@ -75,6 +83,21 @@ class KeyboardService : InputMethodService(), LifecycleOwner, SavedStateRegistry
 
     /** True while bKash's box (the phone app's USSD field) is the box being typed into. */
     private var inPhoneBox = false
+
+    /**
+     * How many PIN digits the user has typed into bKash's box, for the dots on the PIN pad. Counted as
+     * they're typed, so the box (with the PIN in it) is never read back.
+     */
+    private val pinTyped = mutableIntStateOf(0)
+
+    /** The PIN box closed with digits in it: Send, most likely. The next bKash box is its answer. */
+    private var pinSent = false
+
+    /**
+     * Room for the system's bar under the keyboard (its ⌄ and keyboard-switch buttons, which Android 15+
+     * draws over the keyboard's own window), in px. Read from the view's insets.
+     */
+    private val bottomInset = mutableIntStateOf(0)
 
     /** Ends the guide if no new bKash box turns up after the last one closed (see [onFinishInput]). */
     private var goneCheck: Job? = null
@@ -92,7 +115,10 @@ class KeyboardService : InputMethodService(), LifecycleOwner, SavedStateRegistry
                 when {
                     // The guide ended before the PIN (Cancel, or the card closed): give the user's keyboard
                     // back now, not the next time they tap a text box somewhere else.
-                    guide == null -> if (before != null) switchAway(quiet = true)
+                    guide == null -> {
+                        pinSent = false
+                        if (before != null) switchAway(quiet = true)
+                    }
                     // Next on the card: the reply in bKash's box is for the step the user skipped.
                     before != null && guide.index != before.index && guide.filled != guide.index && inPhoneBox -> follow(guide)
                 }
@@ -103,9 +129,11 @@ class KeyboardService : InputMethodService(), LifecycleOwner, SavedStateRegistry
     /** Puts the card's new step's reply in bKash's box in place of the old one; none for the PIN. */
     private fun follow(guide: GuideSession.State) {
         val step = guide.step
+        pinSent = false
         if (step.kind == GuideStep.Kind.Pin) {
             replaceBox("")
-            return switchAway()
+            pinTyped.intValue = 0
+            return showPad()
         }
         replaceBox(step.fill.orEmpty())
         if (step.fill != null) GuideSession.filled(guide.index)
@@ -128,7 +156,22 @@ class KeyboardService : InputMethodService(), LifecycleOwner, SavedStateRegistry
         return ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@KeyboardService)
             setViewTreeSavedStateRegistryOwner(this@KeyboardService)
-            setContent { ChalaidenTheme { Panel(onKey = ::key, onDelete = ::delete, onSwitch = ::switchAway) } }
+            // Compose's own inset modifiers see nothing in an input method's window, so the bar is
+            // measured here. Whichever reports it (navigation bar, or its tappable area) wins.
+            ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
+                bottomInset.intValue = maxOf(
+                    insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom,
+                    insets.getInsets(WindowInsetsCompat.Type.tappableElement()).bottom,
+                    insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.navigationBars()).bottom,
+                )
+                insets
+            }
+            setContent {
+                ChalaidenTheme {
+                    val bottom = with(LocalDensity.current) { bottomInset.intValue.toDp() }
+                    Panel(pinTyped = pinTyped.intValue, bottom = bottom, onKey = ::key, onDelete = ::delete)
+                }
+            }
         }
     }
 
@@ -142,20 +185,22 @@ class KeyboardService : InputMethodService(), LifecycleOwner, SavedStateRegistry
         inPhoneBox = info.inputType != EditorInfo.TYPE_NULL && info.packageName == KeyboardFill.PHONE_PACKAGE
         if (!inPhoneBox) return
         goneCheck?.cancel()
-        act(KeyboardFill.decide(GuideSession.state.value, inPhone = true, empty = boxEmpty()))
+        act(KeyboardFill.decide(GuideSession.state.value, inPhone = true, empty = boxEmpty(), pinSent = pinSent))
     }
 
     /**
      * bKash's box closed: Send (the next prompt follows within seconds), or the dialog went away for good
      * (Cancel, bKash timing out) while Chalaiden isn't in front to notice. With no new box for
-     * [GONE_MILLIS], the guide is over, the same as when Chalaiden comes back to the front.
+     * [GONE_MILLIS], the guide is over, the same as when Chalaiden comes back to the front. That holds
+     * at the PIN too: Cancel there, or Send with bKash's answer shown without a box.
      */
     override fun onFinishInput() {
         val wasPhone = inPhoneBox
         inPhoneBox = false
         super.onFinishInput()
         val guide = GuideSession.state.value
-        if (!wasPhone || guide == null || guide.step.kind == GuideStep.Kind.Pin) return
+        if (!wasPhone || guide == null) return
+        if (guide.step.kind == GuideStep.Kind.Pin && pinTyped.intValue > 0) pinSent = true
         val closedAt = System.currentTimeMillis()
         goneCheck?.cancel()
         goneCheck = scope.launch {
@@ -170,7 +215,6 @@ class KeyboardService : InputMethodService(), LifecycleOwner, SavedStateRegistry
         registry.currentState = Lifecycle.State.RESUMED
         val inPhone = info.packageName == KeyboardFill.PHONE_PACKAGE
         if (!inPhone || GuideSession.state.value == null) act(KeyMove.HandBack())
-        else if (GuideSession.state.value?.step?.kind == GuideStep.Kind.Pin) switchAway()
     }
 
     private fun boxEmpty(): Boolean = boxText().isNullOrEmpty()
@@ -185,6 +229,17 @@ class KeyboardService : InputMethodService(), LifecycleOwner, SavedStateRegistry
             is KeyMove.HandBack -> {
                 move.index?.let(GuideSession::reached)
                 switchAway()
+            }
+            is KeyMove.PinPad -> {
+                GuideSession.reached(move.index)
+                pinTyped.intValue = 0 // a new, empty PIN box
+                pinSent = false
+                showPad()
+            }
+            // bKash's answer is up, in a box of its own: put the pad away and give the keyboard back.
+            KeyMove.Finished -> {
+                requestHideSelf(0)
+                GuideSession.end(GuideSession.End.Answered)
             }
         }
     }
@@ -206,6 +261,12 @@ class KeyboardService : InputMethodService(), LifecycleOwner, SavedStateRegistry
      * typed, it's a change (see [GuideSession.edited]).
      */
     private fun key(digit: String) {
+        if (atPin()) {
+            if (pinTyped.intValue >= PIN_DIGITS) return // bKash PINs are 5 digits; a 6th would be refused
+            currentInputConnection?.commitText(digit, 1) ?: return
+            pinTyped.intValue++
+            return
+        }
         currentInputConnection?.commitText(digit, 1) ?: return
         noteEdit()
     }
@@ -213,8 +274,18 @@ class KeyboardService : InputMethodService(), LifecycleOwner, SavedStateRegistry
     private fun delete() {
         val ic = currentInputConnection ?: return
         if (ic.getSelectedText(0).isNullOrEmpty()) ic.deleteSurroundingText(1, 0) else ic.commitText("", 1)
-        noteEdit()
+        if (atPin()) pinTyped.intValue = (pinTyped.intValue - 1).coerceAtLeast(0) else noteEdit()
     }
+
+    /**
+     * bKash's box takes focus without asking for a keyboard (the replies are typed without one showing),
+     * so at the PIN the pad puts itself up rather than waiting for the user to tap the box.
+     */
+    private fun showPad() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) requestShowSelf(0)
+    }
+
+    private fun atPin() = GuideSession.state.value?.step?.kind == GuideStep.Kind.Pin
 
     private fun noteEdit() {
         val guide = GuideSession.state.value ?: return
@@ -254,52 +325,35 @@ class KeyboardService : InputMethodService(), LifecycleOwner, SavedStateRegistry
 /** Longer than bKash ever takes to send its next prompt after a reply (seconds, on a slow network). */
 private const val GONE_MILLIS = 12_000L
 
-/** Status line, then a number pad (for a menu number bKash put somewhere else). No pad for the PIN. */
+private const val PIN_DIGITS = 5
+
+/**
+ * A number pad and nothing else: for a menu number bKash put somewhere else, or, at the PIN, for the PIN
+ * itself (with dots, so the digits never show on the keyboard). The card above bKash says what to do.
+ * No pad outside a guide. [bottom] keeps the last row clear of the system's bar.
+ */
 @Composable
-private fun Panel(onKey: (String) -> Unit, onDelete: () -> Unit, onSwitch: () -> Unit) {
+private fun Panel(pinTyped: Int, bottom: Dp, onKey: (String) -> Unit, onDelete: () -> Unit) {
     val t = tokens
+    val haptics = LocalHapticFeedback.current
     val guide by GuideSession.state.collectAsState()
-    val step = guide?.step
-    val pin = step == null || step.kind == GuideStep.Kind.Pin
+    val step = guide?.step ?: return
+    val pin = step.kind == GuideStep.Kind.Pin
+    val tap = { k: String -> haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onKey(k) }
     Column(
-        Modifier.fillMaxWidth().background(t.bg).navigationBarsPadding().padding(horizontal = 8.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().background(t.bg).padding(bottom = bottom).padding(horizontal = 8.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Row(Modifier.fillMaxWidth().padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    when {
-                        step == null -> "Chalaiden keyboard"
-                        pin -> "Your PIN goes on your own keyboard"
-                        guide?.filled == guide?.index && step.fill != null -> "Typed ${step.fill} · ${step.title.removePrefix("Choose ").removePrefix("Type the ")}"
-                        else -> step.title
-                    },
-                    style = Type.title, color = t.ink, maxLines = 1,
-                )
-                Text(
-                    when {
-                        step == null -> "It only types bKash replies."
-                        pin -> "Tap Your keyboard."
-                        else -> "Check it, then tap Send."
-                    },
-                    style = Type.label, color = t.inkSoft, maxLines = 1,
-                )
-            }
-            Text(
-                "Your keyboard", style = Type.button, color = t.accent,
-                modifier = Modifier.clip(RoundedCornerShape(50)).clickable(role = Role.Button, onClick = onSwitch)
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-            )
+        if (pin) {
+            PinDots(pinTyped, PIN_DIGITS, Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp, bottom = 10.dp))
         }
-        if (!pin) {
-            listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9")).forEach { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { row.forEach { Key(it) { onKey(it) } } }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(Modifier.weight(1f))
-                Key("0") { onKey("0") }
-                Key(null, onDelete)
-            }
+        listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9")).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { row.forEach { Key(it) { tap(it) } } }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(Modifier.weight(1f))
+            Key("0") { tap("0") }
+            Key(null) { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onDelete() }
         }
     }
 }

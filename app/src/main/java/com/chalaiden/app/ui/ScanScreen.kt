@@ -121,6 +121,14 @@ private fun Camera(onRead: (NumberRead) -> Unit, onTypeInstead: () -> Unit, onGa
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current
     val t = tokens
+    // The viewfinder is dark in either theme, so the status bar icons go white while it's up.
+    val view = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.runtime.DisposableEffect(t.isDark) {
+        val window = (view.context as? android.app.Activity)?.window
+        val bars = window?.let { androidx.core.view.WindowCompat.getInsetsController(it, view) }
+        bars?.isAppearanceLightStatusBars = false
+        onDispose { bars?.isAppearanceLightStatusBars = !t.isDark }
+    }
     var live by remember { mutableStateOf<LiveNumber?>(null) }
     var torch by remember { mutableStateOf(false) }
     var camera by remember { mutableStateOf<Camera?>(null) }

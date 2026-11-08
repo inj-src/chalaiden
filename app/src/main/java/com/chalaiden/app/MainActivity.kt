@@ -119,7 +119,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge(SystemBarStyle.dark(android.graphics.Color.TRANSPARENT), SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
+        enableEdgeToEdge(SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT), SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT))
         RunCover.attach(this)
         GuideSession.bind(this)
         GuideCover.attach(this)
@@ -138,7 +138,6 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         GuideSession.setAppVisible(true)
-        GuideSession.consumeFinished()
         checkSetup()
     }
 
@@ -235,10 +234,29 @@ class MainActivity : ComponentActivity() {
         }
         // Debug builds only: show the guided card for a made-up payment, without dialling.
         if (BuildConfig.DEBUG && intent?.getBooleanExtra("guide_demo", false) == true) {
-            val demo = Flows.payment("01712345678", "250", null).copy(groups = listOf(5, 3, 3))
+            val demo = Flows.payment("01302277488", "250", null).copy(groups = listOf(5, 3, 3))
             stack.clear()
             stack += Screen.Home
             GuideSession.start(demo)
+        }
+        if (BuildConfig.DEBUG && intent?.hasExtra("demo") == true) {
+            val target = DebugDemo.target(
+                intent.getStringExtra("demo").orEmpty(),
+                intent.getStringExtra("kind"),
+                intent.getBooleanExtra("worst", false),
+            )
+            when (target) {
+                is DebugDemo.Target.Run -> {
+                    UssdSession.debugShow(UssdSession.Snapshot(target.flow, target.state, target.confirmed))
+                    stack.clear(); stack += listOf(Screen.Home, Screen.Running)
+                }
+                is DebugDemo.Target.Result -> {
+                    UssdSession.debugShow(null) // or the run cover stays up over the result
+                    stack.clear(); stack += listOf(Screen.Home, Screen.Result(target.flow, target.outcome))
+                }
+                is DebugDemo.Target.Receipt -> com.chalaiden.app.ui.writeReceipt(this, target.flow, target.outcome, java.util.Date())
+                null -> Unit
+            }
         }
         if (BuildConfig.DEBUG && intent?.hasExtra("ussd_probe") == true) {
             com.chalaiden.app.ussd.UssdProbe.send(this, intent.getStringExtra("ussd_probe").orEmpty(), simId())
@@ -258,17 +276,6 @@ class MainActivity : ComponentActivity() {
 
     /** Nothing left to set up: automatic answering works, or the user chose guided mode. */
     private fun ready() = phoneReady() && inUse() != null
-
-    /** For Home's menu: how bKash gets answered now. */
-    private fun setupStatus(): String = when {
-        !phoneReady() -> "Not finished"
-        else -> when (inUse()) {
-            Method.Root -> "Automatic, with root"
-            Method.Shizuku -> "Automatic, with Shizuku"
-            Method.Guided -> "Guided mode"
-            null -> "Not finished"
-        }
-    }
 
     /** A killed session left the keyboards off, and neither root nor Shizuku is here to turn them back on. */
     private fun keyboardOff(): Boolean = prefs.imeToRestore != null && !UssdSession.isActive &&
@@ -337,7 +344,7 @@ class MainActivity : ComponentActivity() {
                     startActivity(Dialer.callIntent(this@MainActivity, sim))
                 }.onFailure {
                     UssdSession.clear()
-                    replaceTop(Screen.Result(flow, Outcome.Failed("Couldn't open the bKash menu: ${it.message}", pinSent = false)))
+                    replaceTop(Screen.Result(flow, Outcome.Failed("Couldn't open the bKash menu: ${it.message}", pinSent = false, fromBkash = false)))
                 }
             }
         }
@@ -353,6 +360,7 @@ class MainActivity : ComponentActivity() {
             if (state is RunState.Finished && stack.lastOrNull() == Screen.Running) {
                 PinEntry.reset() // digits typed before a failure while walking the menu
                 replaceTop(Screen.Result(s.flow, state.outcome))
+                if (state.outcome is Outcome.Success && s.flow.kind == FlowKind.Payment) prefs.scanLearned = true
                 UssdSession.clear()
             }
         }
@@ -397,7 +405,7 @@ class MainActivity : ComponentActivity() {
                 onCashOut = { push(Screen.Number(FlowKind.CashOut, "", null)) },
                 onBalance = { start(Flows.balance()) },
                 onSetup = { push(Screen.Setup(then = null)) },
-                setupStatus = setupTick.let { setupStatus() },
+                scanLearned = prefs.scanLearned,
             )
             is Screen.Scan -> ScanScreen(
                 onRead = { read ->
@@ -474,12 +482,13 @@ class MainActivity : ComponentActivity() {
     private fun AnimatedContentTransitionScope<Screen>.screenTransition(from: Screen, to: Screen, forward: Boolean): ContentTransform {
         val ease = CubicBezierEasing(0.2f, 0f, 0f, 1f)
         if (to is Screen.Result) {
-            return (fadeIn(tween(320, delayMillis = 60)) + scaleIn(tween(420, easing = ease), initialScale = 0.94f))
-                .togetherWith(fadeOut(tween(160)))
+            return (fadeIn(tween(220, delayMillis = 40)) + scaleIn(tween(300, easing = ease), initialScale = 0.96f))
+                .togetherWith(fadeOut(tween(120)))
         }
         val dir = if (forward) 1 else -1
-        return (slideInHorizontally(tween(380, easing = ease)) { dir * it / 7 } + fadeIn(tween(260, delayMillis = 70)))
-            .togetherWith(slideOutHorizontally(tween(380, easing = ease)) { -dir * it / 12 } + fadeOut(tween(140)))
+        // Under 300ms: this runs on nearly every tap, and slower motion makes the whole app feel slow.
+        return (slideInHorizontally(tween(300, easing = ease)) { dir * it / 7 } + fadeIn(tween(200, delayMillis = 50)))
+            .togetherWith(slideOutHorizontally(tween(300, easing = ease)) { -dir * it / 12 } + fadeOut(tween(120)))
             .apply { targetContentZIndex = if (forward) 1f else 0f }
     }
 

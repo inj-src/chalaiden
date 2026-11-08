@@ -26,9 +26,16 @@ class KeyboardFillTest {
         assertEquals(KeyMove.None, KeyboardFill.decide(guide(pay, 1, filled = 1), inPhone = true, empty = false))
     }
 
-    @Test fun pinIsNeverTypedAndHandsBack() {
-        assertEquals(KeyMove.HandBack(4), KeyboardFill.decide(guide(pay, 3, filled = 3), inPhone = true, empty = true))
-        assertEquals(KeyMove.HandBack(4), KeyboardFill.decide(guide(pay, 4), inPhone = true, empty = true))
+    @Test fun pinIsNeverTypedTheUserGetsThePinPad() {
+        assertEquals(KeyMove.PinPad(4), KeyboardFill.decide(guide(pay, 3, filled = 3), inPhone = true, empty = true))
+        assertEquals(KeyMove.PinPad(4), KeyboardFill.decide(guide(pay, 4), inPhone = true, empty = true))
+    }
+
+    @Test fun aBoxAfterTheSentPinIsBkashsAnswerNotAnotherPin() {
+        val bal = Flows.balance()
+        assertEquals(KeyMove.Finished, KeyboardFill.decide(guide(bal, 2), inPhone = true, empty = true, pinSent = true))
+        // Before the PIN went, the same box is still the PIN prompt.
+        assertEquals(KeyMove.PinPad(2), KeyboardFill.decide(guide(bal, 2), inPhone = true, empty = true, pinSent = false))
     }
 
     @Test fun outsideTheUssdBoxOrWithoutAGuideHandsBack() {
@@ -40,7 +47,7 @@ class KeyboardFillTest {
         val bal = Flows.balance()
         assertEquals(KeyMove.Type("9", 0), KeyboardFill.decide(guide(bal), inPhone = true, empty = true))
         assertEquals(KeyMove.Type("1", 1), KeyboardFill.decide(guide(bal, 0, filled = 0), inPhone = true, empty = true))
-        assertEquals(KeyMove.HandBack(2), KeyboardFill.decide(guide(bal, 1, filled = 1), inPhone = true, empty = true))
+        assertEquals(KeyMove.PinPad(2), KeyboardFill.decide(guide(bal, 1, filled = 1), inPhone = true, empty = true))
     }
 
     @Test fun changedReplyAnsweredSomethingElseSoTheSameStepComesAgain() {

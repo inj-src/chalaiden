@@ -19,7 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -79,24 +79,32 @@ fun AnimatedCheck(color: Color, size: Dp, modifier: Modifier = Modifier, stroke:
  */
 @Composable
 fun SuccessBadge(disc: Color, tick: Color, size: Dp, modifier: Modifier = Modifier, onShown: () -> Unit = {}) {
-    val scale = remember { Animatable(0.4f) }
+    // Grows from 85%, never from nothing, and fades in as it does; one small overshoot, because a payment
+    // going through is the one moment in the app that earns it.
+    val scale = remember { Animatable(0.85f) }
+    val alpha = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        launch { scale.animateTo(1f, spring(dampingRatio = 0.48f, stiffness = Spring.StiffnessMediumLow)) }
+        launch { alpha.animateTo(1f, tween(160)) }
+        launch { scale.animateTo(1f, spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMediumLow)) }
         kotlinx.coroutines.delay(420)
         onShown()
     }
-    Box(modifier.size(size).scale(scale.value), contentAlignment = Alignment.Center) {
+    Box(modifier.size(size).graphicsLayer { scaleX = scale.value; scaleY = scale.value; this.alpha = alpha.value }, contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(size)) { drawCircle(disc) }
-        AnimatedCheck(tick, size * 0.56f, stroke = 3.dp, delayMillis = 140, durationMillis = 420)
+        AnimatedCheck(tick, size * 0.56f, stroke = 3.dp, delayMillis = 120, durationMillis = 380)
     }
 }
 
-/** For the other outcomes: the badge springs in without the drawing. */
+/** For the other outcomes: settles in without a bounce. A failure is no moment for play. */
 @Composable
 fun PopIn(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    val scale = remember { Animatable(0.6f) }
-    LaunchedEffect(Unit) { scale.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow)) }
-    Box(modifier.scale(scale.value), contentAlignment = Alignment.Center) { content() }
+    val scale = remember { Animatable(0.92f) }
+    val alpha = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        launch { alpha.animateTo(1f, tween(160)) }
+        scale.animateTo(1f, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium))
+    }
+    Box(modifier.graphicsLayer { scaleX = scale.value; scaleY = scale.value; this.alpha = alpha.value }, contentAlignment = Alignment.Center) { content() }
 }
 
 private operator fun Dp.times(f: Float): Dp = (value * f).dp

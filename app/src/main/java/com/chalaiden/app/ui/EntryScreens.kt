@@ -10,10 +10,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -50,6 +54,7 @@ import com.chalaiden.app.ui.components.PhoneGroups
 import com.chalaiden.app.ui.components.AppIcons
 import com.chalaiden.app.ui.components.Chip
 import com.chalaiden.app.ui.components.Keypad
+import com.chalaiden.app.ui.components.capScale
 import com.chalaiden.app.ui.components.PrimaryButton
 import com.chalaiden.app.ui.components.TopBar
 import com.chalaiden.app.ui.theme.Type
@@ -86,7 +91,7 @@ fun NumberScreen(
             when (kind) {
                 FlowKind.Payment -> "Shop's bKash number"
                 FlowKind.CashOut -> "Agent's bKash number"
-                else -> "Send to"
+                else -> "Send money"
             },
             onBack,
         )
@@ -123,14 +128,21 @@ fun NumberScreen(
                 color = if (number.length == 11 && !valid) t.error else t.inkSoft,
             )
             if (crop == null) {
-                Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(
+                    Modifier.fillMaxWidth().padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     if (kind == FlowKind.SendMoney) Chip(AppIcons.Person, "Contacts") { contact.launch(Unit) }
                     Chip(AppIcons.Paste, "Paste") { pasted(context)?.let { number = it } }
                     if (onScan != null) Chip(AppIcons.Scan, "Scan") { onScan() }
                 }
             }
-            Spacer(Modifier.weight(1f))
-            Keypad(onKey = { if (number.length < 11) number += it }, onBackspace = { number = number.dropLast(1) })
+            Keypad(
+                onKey = { if (number.length < 11) number += it },
+                onBackspace = { number = number.dropLast(1) },
+                modifier = Modifier.weight(1f).padding(top = 12.dp),
+            )
         }
         PrimaryButton("Continue", enabled = valid, modifier = Modifier.padding(20.dp)) { onContinue(number) }
     }
@@ -160,36 +172,50 @@ fun AmountScreen(kind: FlowKind, number: String, groups: List<Int>?, onPay: (amo
             onBack,
         )
         Column(Modifier.weight(1f).padding(horizontal = 20.dp)) {
-            // Same card as the number screen, so the number reads as "who this goes to"; tap to change it.
+            // Settled now: the compact line the PIN screen shows next, so the amount is the one hero here and
+            // the number carries over unchanged into the run. Tap it to go back and change it.
             Spacer(Modifier.height(8.dp))
-            Text(
-                when (kind) {
-                    FlowKind.Payment -> "Shop's number"
-                    FlowKind.CashOut -> "Agent's number"
-                    else -> "Sending to"
-                },
-                style = Type.label, color = t.inkSoft,
-            )
-            Spacer(Modifier.height(8.dp))
-            NumberRail(
-                number,
-                groups = groups ?: PhoneGroups,
-                modifier = Modifier.clip(RoundedCornerShape(24.dp))
-                    .clickable(role = Role.Button, onClickLabel = "Change number", onClick = onBack),
-            )
-            Spacer(Modifier.weight(1f))
-            // The amount sits centred just above the keypad that types it.
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp))
+                    .clickable(role = Role.Button, onClickLabel = "Change number", onClick = onBack)
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        when (kind) {
+                            FlowKind.Payment -> "To shop"
+                            FlowKind.CashOut -> "To agent"
+                            else -> "To"
+                        },
+                        style = Type.label, color = t.inkSoft,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    NumberRail(number, groups = groups ?: PhoneGroups, compact = true)
+                }
+                // The one way to fix a wrong payee before money moves: a button, not a footnote.
+                Box(
+                    Modifier.padding(start = 12.dp).heightIn(min = 36.dp).clip(RoundedCornerShape(50)).background(t.raised)
+                        .padding(horizontal = 14.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("Change", style = Type.label.copy(fontWeight = FontWeight.Medium), color = t.ink)
+                }
+            }
+            // The amount sits centred just above the keypad that types it; the pair hugs the bottom, and only
+            // when space runs short (200% text, a small phone) do the keys give up height.
+            Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Bottom) {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 val shown = if (amount.isEmpty()) "0" else "%,d".format(value)
                 Row(verticalAlignment = Alignment.Bottom) {
-                    Text("Tk", style = Type.title.copy(fontSize = 26.sp), color = t.inkSoft,
-                        modifier = Modifier.padding(end = 8.dp, bottom = 16.dp))
                     Text(
                         shown,
-                        style = Type.amount.copy(fontSize = if (shown.length > 6) 64.sp else 76.sp, letterSpacing = (-2).sp),
+                        style = Type.amount.copy(fontSize = (if (shown.length > 6) 64.sp else 76.sp).capScale(), letterSpacing = (-2).sp),
                         color = if (amount.isEmpty()) t.line else t.ink,
                         maxLines = 1,
                     )
+                    Text("TK", style = Type.title.copy(fontSize = 26.sp.capScale()), color = t.inkSoft,
+                        modifier = Modifier.padding(start = 10.dp, bottom = 16.dp))
                 }
                 Spacer(Modifier.height(6.dp))
                 // bKash's cash out menu has no reference step.
@@ -211,18 +237,19 @@ fun AmountScreen(kind: FlowKind, number: String, groups: List<Int>?, onPay: (amo
                         },
                     )
                 } else {
-                    Text("Add reference", style = Type.button, color = t.accent,
+                    Text("Add reference", style = Type.button, color = t.ink,
                         modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { showReference = true }.padding(vertical = 10.dp))
                 }
             }
-            Spacer(Modifier.height(28.dp))
             Keypad(
                 onKey = { if (amount.length < 6 && !(amount.isEmpty() && it == '0')) amount += it },
                 onBackspace = { amount = amount.dropLast(1) },
+                modifier = Modifier.weight(1f, fill = false).padding(top = 28.dp),
             )
+            }
         }
         PrimaryButton(
-            if (value > 0) "$verb Tk ${"%,d".format(value)}" else verb,
+            if (value > 0) "$verb ${"%,d".format(value)} TK" else verb,
             enabled = value > 0,
             modifier = Modifier.padding(20.dp),
         ) { onPay(amount, reference.trim()) }

@@ -9,6 +9,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,7 +22,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.heightIn
+import com.chalaiden.app.ui.components.AppIcons
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -36,10 +41,13 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import com.chalaiden.app.ui.components.AnimatedCheck
 import com.chalaiden.app.ui.components.HoldToConfirm
 import com.chalaiden.app.ui.components.Keypad
+import com.chalaiden.app.ui.components.AmountText
+import com.chalaiden.app.ui.components.DetailRow
 import com.chalaiden.app.ui.components.NumberRail
 import com.chalaiden.app.ui.components.PhoneGroups
 import com.chalaiden.app.ui.components.PinDots
@@ -89,13 +97,12 @@ fun RunOverlay() {
     }
     Box(Modifier.fillMaxSize().background(t.bg).systemBarsPadding()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp)) {
-            // On the fee step bKash's own summary lists the recipient, so the rail would only repeat it.
-            Header(s.flow, running = s.confirmed, showRecipient = phase != Phase.Fee)
+            Header(s.flow, running = s.confirmed)
             Spacer(Modifier.height(24.dp))
             AnimatedContent(
                 targetState = phase,
                 transitionSpec = {
-                    (fadeIn(tween(260, delayMillis = 60)) + slideInVertically(tween(320)) { it / 14 })
+                    (fadeIn(tween(200, delayMillis = 50)) + slideInVertically(tween(260)) { it / 14 })
                         .togetherWith(fadeOut(tween(140)))
                 },
                 label = "run",
@@ -115,7 +122,7 @@ fun RunOverlay() {
 private enum class Phase { Pin, Progress, Fee, Confirming }
 
 @Composable
-private fun Header(flow: UssdFlow, running: Boolean, showRecipient: Boolean) {
+private fun Header(flow: UssdFlow, running: Boolean) {
     val t = tokens
     val verb = when (flow.kind) {
         FlowKind.Payment -> if (running) "Paying" else "Pay"
@@ -125,10 +132,15 @@ private fun Header(flow: UssdFlow, running: Boolean, showRecipient: Boolean) {
     }
     Text(verb, style = Type.title, color = t.inkSoft)
     if (flow.amount != null) {
-        Text("Tk ${flow.amount}", style = Type.amount, color = t.ink)
+        AmountText("%,d".format(flow.amount.toLongOrNull() ?: 0))
     }
-    flow.recipient?.takeIf { showRecipient }?.let {
+    flow.recipient?.let {
         Spacer(Modifier.height(12.dp))
+        Text(
+            when (flow.kind) { FlowKind.Payment -> "To shop"; FlowKind.CashOut -> "To agent"; else -> "To" },
+            style = Type.label, color = t.inkSoft,
+        )
+        Spacer(Modifier.height(2.dp))
         NumberRail(it, groups = flow.groups ?: PhoneGroups, compact = true)
     }
 }
@@ -150,24 +162,36 @@ private fun PinStep(flow: UssdFlow) {
     val t = tokens
     val pin = PinEntry.pin
     Column(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            flow.reference?.takeIf { !Flows.isDefaultReference(it) }?.let { Detail("Reference", it) }
-            val note = when (flow.kind) {
-                FlowKind.CashOut -> "bKash adds its cash out charge to this."
-                FlowKind.Balance -> "Enter your PIN to see your balance."
-                else -> null
-            }
-            note?.let { Text(it, style = Type.body, color = t.inkSoft) }
+        // Details, then the dots and where the PIN goes, right under the amount; the keypad takes the rest
+        // and sits on the hold button. The details scroll and the keys shrink (to 40dp) before "Hold to pay"
+        // is pushed off: at 200% text on a small phone all of it must still be reachable.
+        val note = when (flow.kind) {
+            FlowKind.CashOut -> "bKash adds its cash out charge to this."
+            FlowKind.Balance -> "Enter your PIN to see your balance."
+            else -> null
         }
-        Spacer(Modifier.weight(1f))
+        val reference = flow.reference?.takeIf { !Flows.isDefaultReference(it) }
+        if (reference != null || note != null) {
+            Column(Modifier.heightIn(max = 120.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                reference?.let { DetailRow("Reference", it) }
+                note?.let { Text(it, style = Type.body, color = t.inkSoft) }
+            }
+        }
+        Spacer(Modifier.height(if (reference != null || note != null) 24.dp else 8.dp))
         PinDots(pin.length, PIN_LENGTH, Modifier.align(Alignment.CenterHorizontally))
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(16.dp))
+        Row(Modifier.align(Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+            Icon(AppIcons.Lock, contentDescription = null, tint = t.inkSoft, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Goes only to bKash. Never saved.", style = Type.label.copy(fontSize = 13.sp), color = t.inkSoft, maxLines = 1)
+        }
         Keypad(
             onKey = {
                 if (PinEntry.pin.length < PIN_LENGTH) PinEntry.pin += it
                 UssdSession.warmUp()
             },
             onBackspace = { PinEntry.pin = PinEntry.pin.dropLast(1) },
+            modifier = Modifier.weight(1f).padding(top = 16.dp),
         )
         Spacer(Modifier.height(12.dp))
         HoldToConfirm(
@@ -188,31 +212,26 @@ private fun PinStep(flow: UssdFlow) {
     }
 }
 
-@Composable
-private fun Detail(key: String, value: String) {
-    val t = tokens
-    Row {
-        Text(key, style = Type.body, color = t.inkSoft, modifier = Modifier.weight(1f))
-        Text(value, style = Type.body.copy(fontFamily = Type.button.fontFamily), color = t.ink)
-    }
-}
 
 @Composable
 private fun Progress(flow: UssdFlow, current: Int) {
     val t = tokens
-    val labels = listOf("Open bKash menu") + flow.steps.dropLast(1).map {
+    // Each line says what is happening ("Entering amount"), then, once done, what happened ("Entered amount").
+    val labels: List<Pair<String, String>> = listOf("Opening bKash menu" to "Opened bKash menu") + flow.steps.dropLast(1).map {
         when (it) {
-            is Step.Pick -> "Choose ${it.label}"
-            is Step.Answer -> it.describe.replaceFirstChar { c -> c.uppercase() }
-            Step.Pin -> ""
+            is Step.Pick -> "Choosing ${it.label}" to "Chose ${it.label}"
+            is Step.Answer -> it.describe.replaceFirstChar { c -> c.uppercase() }.let { now -> now to pastTense(now) }
+            Step.Pin -> "" to ""
         }
     }
     Column(Modifier.fillMaxSize()) {
+        // The list sits in the upper part of the free space, not hung from the header with a void below.
+        Spacer(Modifier.weight(0.4f))
         Column(
-            Modifier.fillMaxWidth().padding(top = 8.dp).semantics { liveRegion = LiveRegionMode.Polite },
+            Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            labels.forEachIndexed { i, label ->
+            labels.forEachIndexed { i, (now, past) ->
                 val done = i < current
                 val active = i == current
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -228,13 +247,26 @@ private fun Progress(flow: UssdFlow, current: Int) {
                         }
                     }
                     Spacer(Modifier.width(14.dp))
-                    Text(label, style = Type.body, color = if (done || active) t.ink else t.inkSoft)
+                    Text(if (done) past else now, style = Type.body, color = if (done || active) t.ink else t.inkSoft)
                 }
             }
         }
         Spacer(Modifier.weight(1f))
+        // Down by Cancel, where the eye and thumb already are.
+        Text(
+            "Keep Chalaiden open · about 10 s",
+            style = Type.label, color = t.inkSoft, textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        )
         TextAction("Cancel", Modifier.align(Alignment.CenterHorizontally)) { UssdSession.cancel() }
     }
+}
+
+/** "Entering amount" → "Entered amount", "Adding reference" → "Added reference". */
+private fun pastTense(now: String): String = when {
+    now.startsWith("Entering ") -> "Entered " + now.removePrefix("Entering ")
+    now.startsWith("Adding ") -> "Added " + now.removePrefix("Adding ")
+    else -> now
 }
 
 /** bKash added a fee the user hasn't seen: show its summary and ask once more. The PIN is already entered. */
@@ -249,23 +281,29 @@ private fun FeeStep(flow: UssdFlow, state: RunState.AwaitingPin) {
         }
     }
     Column(Modifier.fillMaxSize()) {
-        Text("bKash charges ${state.feeToConfirm} for this.", style = Type.title, color = t.ink)
-        Spacer(Modifier.height(16.dp))
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            state.details
-                .filterNot { (k, v) -> k.equals("Reference", ignoreCase = true) && Flows.isDefaultReference(v) }
-                .forEach { (k, v) -> Detail(k, v) }
+        // bKash's summary, as a table: the Charge row says what's new, the Total what leaves the account.
+        // It takes the height, so the hold sits at the bottom like on every other screen.
+        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // The number already sits under the amount, as on every other screen; the table is the money.
+            val rows = state.details
+                .filterNot { (k, v) -> v.isBlank() || (k.equals("Reference", ignoreCase = true) && Flows.isDefaultReference(v)) }
+                .filterNot { (_, v) -> v.filter(Char::isDigit) == flow.recipient }
+            rows.forEach { (k, v) ->
+                // The total is what actually leaves the account: set apart by a rule and title type.
+                val total = k.equals("Total", ignoreCase = true)
+                if (total) Box(Modifier.padding(top = 16.dp, bottom = 4.dp).fillMaxWidth().height(1.dp).background(t.line))
+                DetailRow(k, v, strong = total)
+            }
         }
-        Spacer(Modifier.weight(1f))
-        HoldToConfirm(holdLabel(flow.kind), enabled = left > 0) { UssdSession.confirmFee() }
-        TextAction("Cancel", Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp)) { UssdSession.cancel() }
         val secs = (left / 1000).toInt()
         Text(
-            if (secs > 0) "Closes in %d:%02d".format(secs / 60, secs % 60) else "bKash closed this",
-            style = Type.label.copy(fontSize = 12.sp),
-            color = if (secs in 1..20) t.accent else t.inkSoft,
-            modifier = Modifier.align(Alignment.CenterHorizontally),
+            if (secs > 0) "bKash closes this in %d:%02d".format(secs / 60, secs % 60) else "bKash closed this",
+            style = Type.label,
+            color = if (secs in 1..20) t.error else t.inkSoft,
+            modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 12.dp),
         )
+        HoldToConfirm(holdLabel(flow.kind), enabled = left > 0) { UssdSession.confirmFee() }
+        TextAction("Cancel", Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp)) { UssdSession.cancel() }
     }
 }
 

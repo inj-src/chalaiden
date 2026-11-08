@@ -1,7 +1,6 @@
 package com.chalaiden.app.ui
 
 import android.content.Context
-import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
 import android.provider.Settings
@@ -27,7 +26,6 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import com.chalaiden.app.MainActivity
 import com.chalaiden.app.ui.theme.ChalaidenTheme
 import com.chalaiden.app.ussd.GuideSession
 import kotlinx.coroutines.CoroutineScope
@@ -98,16 +96,8 @@ object GuideCover {
                         exit = fadeOut(tween(FADE_MILLIS)) + slideOutVertically(tween(FADE_MILLIS)) { -it / 3 },
                     ) {
                         guide?.let { g ->
-                            GuideCard(g, floating = true, onDone = {
-                                GuideSession.end(GuideSession.End.Done)
-                                // Back to Chalaiden, which goes home (the result is in bKash's dialog and SMS).
-                                runCatching {
-                                    context.startActivity(
-                                        Intent(context, MainActivity::class.java)
-                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
-                                    )
-                                }
-                            })
+                            // No Done: once bKash's last dialog closes, Chalaiden is in front again and ends it.
+                            GuideCard(g, floating = true)
                         }
                     }
                 }

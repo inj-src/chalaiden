@@ -56,14 +56,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.chalaiden.app.R
 import com.chalaiden.app.keyboard.ChalaidenKeyboard
 import com.chalaiden.app.ui.components.AppIcons
+import com.chalaiden.app.ui.components.SimMark
 import com.chalaiden.app.ui.components.PrimaryButton
 import com.chalaiden.app.ui.components.TextAction
 import com.chalaiden.app.ui.theme.Type
@@ -245,7 +249,7 @@ fun SetupScreen(
                 PrimaryButton("Pick one", enabled = false) {}
             }
             Box(Modifier.height(52.dp), contentAlignment = Alignment.Center) {
-                secondary?.let { (label, action) -> TextAction(label, color = t.accent, onClick = action) }
+                secondary?.let { (label, action) -> TextAction(label, onClick = action) }
             }
         }
     }
@@ -257,18 +261,22 @@ private fun SetupHeader(page: Int, done: List<Boolean>, onBack: () -> Unit) {
     val t = tokens
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(
-            Modifier.size(44.dp).clip(CircleShape).background(t.raised).clickable(role = Role.Button, onClickLabel = "Back", onClick = onBack),
+            Modifier.size(48.dp).clip(CircleShape).background(t.raised).clickable(role = Role.Button, onClickLabel = "Back", onClick = onBack),
             contentAlignment = Alignment.Center,
         ) {
             Icon(AppIcons.Back, contentDescription = "Back", tint = t.ink, modifier = Modifier.size(22.dp))
         }
         Spacer(Modifier.width(18.dp))
-        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // The segments say where you are; the words are for screen readers only.
+        Row(
+            Modifier.weight(1f).semantics(mergeDescendants = true) { contentDescription = "Step ${page + 1} of $STEPS" },
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             repeat(STEPS) { k ->
                 val color by animateColorAsState(
                     when {
-                        k == page -> t.ink
-                        done[k] -> t.accent
+                        // Where you are and what's behind you in ink; what's ahead in grey. Blue is kept for money.
+                        k == page || done[k] -> t.ink
                         else -> t.raised
                     },
                     label = "step-bar",
@@ -276,9 +284,7 @@ private fun SetupHeader(page: Int, done: List<Boolean>, onBack: () -> Unit) {
                 Box(Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(50)).background(color))
             }
         }
-        Spacer(Modifier.width(14.dp))
-        Text("${page + 1} of $STEPS", style = Type.label, color = t.inkSoft)
-        Spacer(Modifier.width(4.dp))
+        Spacer(Modifier.width(16.dp))
     }
 }
 
@@ -330,12 +336,12 @@ private fun SimTile(sim: Sim, selected: Boolean, modifier: Modifier = Modifier, 
     val shape = RoundedCornerShape(22.dp)
     Column(
         modifier.clip(shape).background(t.surface)
-            .border(2.dp, if (selected) t.accent else Color.Transparent, shape)
+            .border(2.dp, if (selected) t.ink else Color.Transparent, shape)
             .selectable(selected, role = Role.RadioButton, onClick = onClick)
             .padding(18.dp),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-            Icon(AppIcons.Sim, null, tint = if (selected) t.accent else t.inkSoft, modifier = Modifier.size(36.dp))
+            SimMark(sim, fallbackTint = if (selected) t.ink else t.inkSoft, modifier = Modifier.size(36.dp))
             Spacer(Modifier.weight(1f))
             Radio(selected)
         }
@@ -359,6 +365,25 @@ private fun WayStep(
     StepHeading("How should Chalaiden answer bKash?", "Any one of these is enough. You can switch later.")
     Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         WayRow(
+            icon = {
+                Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(tokens.raised), contentAlignment = Alignment.Center) {
+                    Icon(AppIcons.Dialpad, null, tint = tokens.ink, modifier = Modifier.size(22.dp))
+                }
+            },
+            title = "Guided mode",
+            tag = "Any phone",
+            badge = badge(Method.Guided, inUse, works = true),
+            detail = when {
+                inUse == Method.Guided && !keyboardOn ->
+                    "Turn on the Chalaiden keyboard, so each reply is typed into bKash's box for you."
+                inUse == Method.Guided && !canFloat ->
+                    "Allow the floating card, so you see each step above bKash's menu."
+                else -> "Chalaiden's keyboard types each reply into bKash's menu; you check it and tap Send. " +
+                    "You type your PIN on its PIN pad."
+            },
+            selected = choice == Method.Guided,
+        ) { onPick(Method.Guided) }
+        WayRow(
             icon = { AppTile(R.drawable.shizuku_icon, 40) },
             title = "Shizuku",
             tag = "No root needed",
@@ -375,32 +400,13 @@ private fun WayStep(
             else "Chalaiden answers bKash for you. Allow it in your root manager when it asks.",
             selected = choice == Method.Root,
         ) { onPick(Method.Root) }
-        WayRow(
-            icon = {
-                Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(tokens.raised), contentAlignment = Alignment.Center) {
-                    Icon(AppIcons.Dialpad, null, tint = tokens.ink, modifier = Modifier.size(22.dp))
-                }
-            },
-            title = "Guided mode",
-            tag = "Any phone",
-            badge = badge(Method.Guided, inUse, works = false),
-            detail = when {
-                inUse == Method.Guided && !keyboardOn ->
-                    "Turn on the Chalaiden keyboard, so each reply is typed into bKash's box for you."
-                inUse == Method.Guided && !canFloat ->
-                    "Allow the floating card, so you see each step above bKash's menu."
-                else -> "Chalaiden's keyboard types each reply into bKash's menu; you check it and tap Send. " +
-                    "Your PIN goes on your own keyboard."
-            },
-            selected = choice == Method.Guided,
-        ) { onPick(Method.Guided) }
     }
 }
 
+/** Only what stands in the way: a method that still needs something says so; one that works says nothing. */
 private fun badge(method: Method, inUse: Method?, works: Boolean) = when {
-    inUse == method -> "In use"
-    works -> "Ready"
-    else -> null
+    inUse == method || works -> null
+    else -> "Needs setup"
 }
 
 /** One way to answer bKash; picking it opens a line on what it does and what's left to do. */
@@ -418,7 +424,7 @@ private fun WayRow(
     val shape = RoundedCornerShape(20.dp)
     Column(
         Modifier.fillMaxWidth().clip(shape).background(t.surface)
-            .border(2.dp, if (selected) t.accent else Color.Transparent, shape)
+            .border(2.dp, if (selected) t.ink else Color.Transparent, shape)
             .selectable(selected, role = Role.RadioButton, onClick = onClick)
             .padding(16.dp),
     ) {
@@ -431,10 +437,9 @@ private fun WayRow(
             }
             badge?.let {
                 Spacer(Modifier.width(8.dp))
-                val on = it == "In use"
                 Text(
-                    it, style = Type.label, color = if (on) t.onAccent else t.inkSoft,
-                    modifier = Modifier.clip(RoundedCornerShape(50)).background(if (on) t.accent else t.raised)
+                    it, style = Type.label, color = t.inkSoft,
+                    modifier = Modifier.clip(RoundedCornerShape(50)).background(t.raised)
                         .padding(horizontal = 10.dp, vertical = 3.dp),
                 )
             }
@@ -442,7 +447,7 @@ private fun WayRow(
             Radio(selected)
         }
         AnimatedVisibility(selected, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
-            Text(detail, style = Type.label, color = t.inkSoft, modifier = Modifier.padding(top = 12.dp))
+            Text(detail, style = Type.label.copy(lineHeight = 20.sp), color = t.inkSoft, modifier = Modifier.padding(top = 12.dp))
         }
     }
 }
@@ -470,22 +475,21 @@ private fun AppTile(icon: Int, size: Int) {
     Image(painterResource(icon), null, Modifier.size(size.dp).clip(RoundedCornerShape((size * 0.3f).dp)))
 }
 
-/** A radio button: a ring, or a blue disc with a tick. */
+/** A radio button: a ring, or an ink disc with a tick (a choice, not money, so not blue). */
 @Composable
 private fun Radio(selected: Boolean) {
     val t = tokens
     if (selected) {
-        Tick(22)
+        Tick(22, fill = t.ink, mark = t.bg)
     } else {
         Box(Modifier.size(22.dp).clip(CircleShape).border(2.dp, t.line, CircleShape))
     }
 }
 
 @Composable
-private fun Tick(size: Int) {
-    val t = tokens
-    Box(Modifier.size(size.dp).clip(CircleShape).background(t.accent), contentAlignment = Alignment.Center) {
-        Icon(AppIcons.Check, null, tint = t.onAccent, modifier = Modifier.size((size * 0.62f).dp))
+private fun Tick(size: Int, fill: Color = tokens.accent, mark: Color = tokens.onAccent) {
+    Box(Modifier.size(size.dp).clip(CircleShape).background(fill), contentAlignment = Alignment.Center) {
+        Icon(AppIcons.Check, null, tint = mark, modifier = Modifier.size((size * 0.62f).dp))
     }
 }
 

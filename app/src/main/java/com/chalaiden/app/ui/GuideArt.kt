@@ -33,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -96,7 +97,10 @@ private fun Art(millis: Int, content: @Composable ColumnScope.(c: Float) -> Unit
  * A finger pressing the middle of this element at [at] (on the loop clock [c]): a dot that comes in,
  * presses for [hold], and lifts with a ripple. Put it before any `clip` so the ripple can spill over.
  */
-private fun Modifier.tap(c: Float, at: Float, hold: Float = 0f, lift: Float = 0.12f): Modifier = drawWithContent {
+private fun Modifier.tap(c: Float, at: Float, hold: Float = 0f, lift: Float = 0.12f): Modifier = composed {
+    // The fingertip is the opposite of the canvas: white on dark, near-black on light.
+    val finger = tokens.ink
+    drawWithContent {
     drawContent()
     val lead = 0.05f
     val p = c - at
@@ -106,10 +110,11 @@ private fun Modifier.tap(c: Float, at: Float, hold: Float = 0f, lift: Float = 0.
     val pressed = p in 0f..hold + 0.03f
     val lifted = ((p - hold) / lift).coerceIn(0f, 1f)
     val alpha = if (p < 0) (1f + p / lead) * 0.5f else 0.5f * (1f - lifted)
-    drawCircle(Color.White.copy(alpha = alpha), r * if (pressed) 0.82f else 1f, center)
+    drawCircle(finger.copy(alpha = alpha), r * if (pressed) 0.82f else 1f, center)
     if (p >= 0) {
         val ring = (p / (hold + lift)).coerceIn(0f, 1f)
-        drawCircle(Color.White.copy(alpha = 0.45f * (1f - ring)), r * (1f + 1.5f * ring), center, style = Stroke(1.5.dp.toPx()))
+        drawCircle(finger.copy(alpha = 0.45f * (1f - ring)), r * (1f + 1.5f * ring), center, style = Stroke(1.5.dp.toPx()))
+    }
     }
 }
 
@@ -369,7 +374,7 @@ fun OverlayArt() = Art(4400) { c ->
     Spacer(Modifier.height(12.dp))
     val card = c.ease(0.56f, 0.66f)
     if (card > 0f) {
-        GuideCardMock("1/6", "Choose Payment", "Usually 4",
+        GuideCardMock("Choose Payment", "Usually 4",
             Modifier.graphicsLayer { alpha = card; translationY = -(1f - card) * 24.dp.toPx() })
     } else {
         Bars(0.9f, 0.7f)
@@ -382,7 +387,6 @@ fun AutoFillArt() = Art(5200) { c ->
     val t = tokens
     val next = c >= 0.72f
     GuideCardMock(
-        if (next) "3/6" else "2/6",
         if (next) "Type the amount" else "Type the merchant number",
         if (next) "250" else "01712 345 678",
         chip = "Typed for you",
@@ -394,23 +398,18 @@ fun AutoFillArt() = Art(5200) { c ->
         // Typed a digit at a time, quickly, so it reads as the keyboard doing it rather than a paste.
         val typed = when {
             next -> if (c >= 0.86f) "250".take(((c - 0.86f) / 0.02f).toInt() + 1) else ""
-            else -> "01712345678".take(((c - 0.2f) / 0.012f).toInt().coerceIn(0, 11))
+            else -> "01302277488".take(((c - 0.2f) / 0.012f).toInt().coerceIn(0, 11))
         }
         Field(typed, focused = true)
     }
 }
 
-/** The PIN goes into bKash's box, dot by dot, typed by the user; then Done on the card. */
+/** The PIN goes into bKash's box, dot by dot, typed by the user on the PIN pad; then Send. */
 @Composable
 fun PinArt() = Art(5200) { c ->
     val t = tokens
     val dots = (0..4).count { c >= 0.22f + it * 0.07f }
-    GuideCardMock(
-        "6/6", "Enter your PIN", "Typed by you, in bKash's box",
-        trailing = if (c >= 0.7f) {
-            { Pill("Done", t.accent, t.onAccent, Modifier.tap(c, 0.84f).graphicsLayer { alpha = c.ease(0.7f, 0.76f) }) }
-        } else null,
-    )
+    GuideCardMock("Enter your PIN", "Typed by you, in bKash's box")
     Spacer(Modifier.height(14.dp))
     UssdDialog(c, sendAt = 0.64f) {
         Text("Enter PIN:", style = Tiny, color = t.ink)
@@ -445,7 +444,7 @@ private fun PromptArt(
             Spacer(Modifier.height(10.dp))
             Bars(0.9f, 0.75f, 0.85f)
         }
-        Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.6f * v)))
+        Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = (if (t.isDark) 0.6f else 0.32f) * v)))
         if (v > 0f) {
             Column(
                 Modifier.align(Alignment.Center).fillMaxWidth()
@@ -501,7 +500,6 @@ private fun UssdDialog(c: Float, modifier: Modifier = Modifier, sendAt: Float? =
 /** Chalaiden's floating guide card, small. */
 @Composable
 private fun GuideCardMock(
-    counter: String,
     title: String,
     value: String?,
     modifier: Modifier = Modifier,
@@ -514,7 +512,7 @@ private fun GuideCardMock(
             .border(1.dp, t.line, RoundedCornerShape(12.dp)).padding(horizontal = 9.dp, vertical = 7.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(counter, style = Tiny, color = t.accent)
+            Image(painterResource(R.drawable.logo_mark), contentDescription = null, modifier = Modifier.size(10.dp))
             Spacer(Modifier.width(5.dp))
             Text(title, style = Tiny.copy(fontWeight = FontWeight.SemiBold), color = t.ink, modifier = Modifier.weight(1f), maxLines = 1)
             trailing?.invoke()

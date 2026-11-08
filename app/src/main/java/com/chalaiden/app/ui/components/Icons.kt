@@ -54,12 +54,11 @@ object AppIcons {
 
     val Send = stroke("send") { moveTo(7f, 17f); lineTo(17f, 7f); moveTo(9f, 7f); lineTo(17f, 7f); lineTo(17f, 15f) }
 
-    /** Wallet with its clasp: check balance. */
-    val Wallet = svg(
-        "wallet",
-        "M20 9V7a2.5 2.5 0 0 0-2.5-2.5H6A2.5 2.5 0 0 0 3.5 7v10A2.5 2.5 0 0 0 6 19.5h11.5A2.5 2.5 0 0 0 20 17v-2",
-        "M15.5 9h5v6h-5a3 3 0 0 1 0-6z",
-        "M15.75 12h.01",
+    /** The taka sign (৳), traced from Noto Sans Bengali: check balance. */
+    val Taka = svg(
+        "taka",
+        "M6.2 4.6C7.6 3.9 10.2 4.2 10.2 6.6V16.5C10.2 19 11.6 20 13 20C15.6 20 17.5 18 17.5 15.6C17.5 13.6 16 12.8 14 13.8",
+        "M6.8 9.7H17",
     )
 
     /** A banknote dropping into an open hand: cash handed over by an agent. */
@@ -94,6 +93,19 @@ object AppIcons {
         moveTo(8f, 5f); lineTo(5.5f, 5f); lineTo(5.5f, 20.5f); lineTo(18.5f, 20.5f); lineTo(18.5f, 5f); lineTo(16f, 5f)
         moveTo(9f, 3.5f); lineTo(15f, 3.5f); lineTo(15f, 6.5f); lineTo(9f, 6.5f); close()
     }
+
+    /** A padlock: where the PIN goes. */
+    val Lock = svg(
+        "lock",
+        "M6.5 11h11a1.5 1.5 0 0 1 1.5 1.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19.5v-7A1.5 1.5 0 0 1 6.5 11z",
+        "M8.5 11V7.5a3.5 3.5 0 0 1 7 0V11",
+    )
+
+    /** A circle struck through: "stopped before it was sent". */
+    val Block = svg("block", "M12 3.5a8.5 8.5 0 1 1 0 17a8.5 8.5 0 1 1 0-17z", "M6 6l12 12")
+
+    /** A clock face: "bKash was still busy, wait a moment". */
+    val Clock = svg("clock", "M12 3.5a8.5 8.5 0 1 1 0 17a8.5 8.5 0 1 1 0-17z", "M12 7.5V12l3 2")
 
     /** Three dots, for a menu. Filled: thin strokes read as rings at this size. */
     val More = ImageVector.Builder("more", 24.dp, 24.dp, 24f, 24f).apply {

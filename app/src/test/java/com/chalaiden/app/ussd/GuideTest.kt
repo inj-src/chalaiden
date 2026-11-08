@@ -54,9 +54,7 @@ class GuideTest {
         GuideSession.start(flow) // a new dial starts bKash's menu from the top
         assertEquals(0, GuideSession.state.value!!.index)
         GuideSession.go(2)
-        GuideSession.end(GuideSession.End.Done)
+        GuideSession.end(GuideSession.End.Closed)
         assertNull(GuideSession.state.value)
-        assertTrue(GuideSession.consumeFinished())
-        assertTrue(!GuideSession.consumeFinished())
     }
 }

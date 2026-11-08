@@ -37,7 +37,10 @@ private const val QR_MODULES = 21
  * merchant number printed under it. Blue brackets around the number show what to aim at.
  */
 @Composable
-fun QrStand(modifier: Modifier = Modifier) {
+fun QrStand(modifier: Modifier = Modifier) = FixedTextScale { Stand(modifier) }
+
+@Composable
+private fun Stand(modifier: Modifier) {
     val t = tokens
     val modules = remember { qrModules() }
     Column(

@@ -32,8 +32,12 @@ class GuideLifecycleTest {
         assertFalse(Lifecycle.leftOpen(state(pin, pinAt = 10_000), End.Gone, at = 40_000))
     }
 
-    @Test fun doneAndCloseAssumeNothing() {
-        assertFalse(Lifecycle.leftOpen(state(2), End.Done, at = 1_000))
+    @Test fun bkashsAnswerToThePinIsStillAnOpenSession() {
+        val pin = Guide.steps(pay).lastIndex
+        assertTrue(Lifecycle.leftOpen(state(pin, pinAt = 10_000), End.Answered, at = 40_000))
+    }
+
+    @Test fun closeAssumesNothing() {
         assertFalse(Lifecycle.leftOpen(state(2), End.Closed, at = 1_000))
     }
 

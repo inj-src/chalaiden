@@ -26,7 +26,8 @@ sealed interface Action {
 sealed interface Outcome {
     data class Success(val message: String, val trxId: String?) : Outcome
     /** [menuMissing]: bKash answered with something other than its main menu, e.g. a leftover prompt. */
-    data class Failed(val message: String, val pinSent: Boolean, val menuMissing: Boolean = false) : Outcome
+    /** [fromBkash]: [message] is bKash's own reply; false when it is Chalaiden's account of what happened. */
+    data class Failed(val message: String, val pinSent: Boolean, val menuMissing: Boolean = false, val fromBkash: Boolean = true) : Outcome
     data class Unknown(val message: String) : Outcome
     data object Cancelled : Outcome
 }
@@ -90,7 +91,7 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
             is RunState.Working -> advance(s.stepIndex, dialog).also { if (it is Action.Reply) answered += dialog.textOrEmpty() }
             is RunState.AwaitingPin -> {
                 // A new dialog while we wait for the PIN means bKash dropped the session.
-                finish(Outcome.Failed(textOf(dialog).ifBlank { "The bKash session timed out." }, pinSent = false))
+                finish(textOf(dialog).let { Outcome.Failed(it.ifBlank { "The bKash session timed out." }, pinSent = false, fromBkash = it.isNotBlank()) })
                 if (dialog is Dialog.Prompt) Action.Cancel else Action.Dismiss
             }
             RunState.Confirming -> {
@@ -142,14 +143,14 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
     /** A reply (the PIN included) could not be typed because the USSD field was gone. Nothing reached bKash. */
     fun onReplyUndelivered() {
         if (state is RunState.Finished) return
-        finish(Outcome.Failed("bKash closed the menu before Chalaiden could answer. Nothing was sent.", pinSent = false))
+        finish(Outcome.Failed("bKash closed the menu before Chalaiden could answer. Nothing was sent.", pinSent = false, fromBkash = false))
     }
 
     /** The phone app's window went away without a final message. */
     fun onSessionLost() {
         when (state) {
             is RunState.Working, is RunState.AwaitingPin ->
-                finish(Outcome.Failed("The bKash session ended before payment. Nothing was charged.", pinSent = false))
+                finish(Outcome.Failed("The bKash session ended before payment. Nothing was charged.", pinSent = false, fromBkash = false))
             RunState.Confirming ->
                 finish(Outcome.Unknown("bKash didn't reply after the PIN."))
             is RunState.Finished, RunState.Ready -> Unit

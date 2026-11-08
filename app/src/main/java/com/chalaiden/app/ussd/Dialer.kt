@@ -13,7 +13,8 @@ import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import androidx.core.content.ContextCompat
 
-data class Sim(val subscriptionId: Int, val slot: Int, val carrier: String)
+/** [network] is the SIM's MCC-MNC, e.g. "47001" for Grameenphone, or blank when unknown. */
+data class Sim(val subscriptionId: Int, val slot: Int, val carrier: String, val network: String = "")
 
 object Dialer {
     val permissions = arrayOf(Manifest.permission.CALL_PHONE, Manifest.permission.READ_PHONE_STATE)
@@ -27,7 +28,9 @@ object Dialer {
         if (!hasPermissions(context)) return emptyList()
         val sm = context.getSystemService(SubscriptionManager::class.java)
         return sm.activeSubscriptionInfoList.orEmpty().map {
-            Sim(it.subscriptionId, it.simSlotIndex, it.carrierName?.toString().orEmpty().ifBlank { "SIM ${it.simSlotIndex + 1}" })
+            val network = if (Build.VERSION.SDK_INT >= 29) "${it.mccString.orEmpty()}${it.mncString.orEmpty()}"
+            else @Suppress("DEPRECATION") "%03d%02d".format(it.mcc, it.mnc)
+            Sim(it.subscriptionId, it.simSlotIndex, it.carrierName?.toString().orEmpty().ifBlank { "SIM ${it.simSlotIndex + 1}" }, network)
         }.sortedBy { it.slot }
     }
 
@@ -70,6 +73,14 @@ class Prefs(context: Context) {
     var bkashLeftOpenAt: Long
         get() = sp.getLong("bkash_left_open_at", 0L)
         set(value) = sp.edit().putLong("bkash_left_open_at", value).apply()
+
+    /**
+     * A payment has gone through once: Home then folds its "What to scan" lesson into a link. A single flag,
+     * not a record of the payment; Chalaiden keeps no history.
+     */
+    var scanLearned: Boolean
+        get() = sp.getBoolean("scan_learned", false)
+        set(value) = sp.edit().putBoolean("scan_learned", value).apply()
 
     /** The keyboard a running session switched off, until it is switched back on. */
     var imeToRestore: String?

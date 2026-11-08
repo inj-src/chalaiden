@@ -206,6 +206,15 @@ object UssdSession {
         _current.value = null
     }
 
+    /**
+     * Debug builds only: shows a made-up run screen. Ignored while a real session is staged or running.
+     * With nothing staged, [warmUp] and [confirm] do nothing, so the demo can't dial.
+     */
+    @Synchronized fun debugShow(snapshot: Snapshot?) {
+        if (!com.chalaiden.app.BuildConfig.DEBUG || engine != null || staged != null) return
+        _current.value = snapshot
+    }
+
     private fun publish() {
         val e = engine
         _current.value = when {
