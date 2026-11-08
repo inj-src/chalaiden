@@ -16,7 +16,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.chalaiden.app.BuildConfig
 import com.chalaiden.app.ui.theme.ChalaidenTheme
-import com.chalaiden.app.ussd.RootUssdDriver
+import com.chalaiden.app.ussd.UssdDriver
 import com.chalaiden.app.ussd.RunState
 import com.chalaiden.app.ussd.UssdSession
 import androidx.compose.animation.AnimatedVisibility
@@ -60,7 +60,7 @@ object RunCover {
         val scope = MainScope()
         scope.launch {
             // Up for the session, and after it until the phone's last dialog has actually closed.
-            combine(UssdSession.current, RootUssdDriver.dialogUp) { snap, dialogUp ->
+            combine(UssdSession.current, UssdDriver.dialogUp) { snap, dialogUp ->
                 (snap != null && snap.state !is RunState.Finished) || dialogUp
             }
                 .distinctUntilChanged()

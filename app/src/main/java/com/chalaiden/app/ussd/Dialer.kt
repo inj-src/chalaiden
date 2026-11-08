@@ -63,8 +63,38 @@ class Prefs(context: Context) {
         get() = sp.getInt("sim", -1).takeIf { it >= 0 }
         set(value) = sp.edit().putInt("sim", value ?: -1).apply()
 
+    /**
+     * Guided mode: when a guide ended with bKash still holding its session (see [GuideSession.Lifecycle]);
+     * 0 when it holds none, or once the next guide has asked to say No to it.
+     */
+    var bkashLeftOpenAt: Long
+        get() = sp.getLong("bkash_left_open_at", 0L)
+        set(value) = sp.edit().putLong("bkash_left_open_at", value).apply()
+
     /** The keyboard a running session switched off, until it is switched back on. */
     var imeToRestore: String?
         get() = sp.getString("ime_to_restore", null)
         set(value) { sp.edit().putString("ime_to_restore", value).commit() }
+
+    /**
+     * How the user chose to answer bKash, in Setup. Null until they choose: then root is used if it works,
+     * else Shizuku. A chosen way is kept even when another one works, so each can be tried out.
+     * Older installs kept only a "guided" flag; that reads as [Method.Guided].
+     */
+    var method: Method?
+        get() = sp.getString("method", null)?.let { name -> Method.entries.firstOrNull { it.name == name } }
+            ?: Method.Guided.takeIf { sp.getBoolean("guided", false) }
+        set(value) = sp.edit().putString("method", value?.name).remove("guided").apply()
+}
+
+/** The three ways Chalaiden can answer bKash's menu. Any one is enough. */
+enum class Method {
+    /** Automatic, with root. */
+    Root,
+
+    /** Automatic, with Shizuku (no root needed). */
+    Shizuku,
+
+    /** The user types each reply; Chalaiden floats it above bKash's menu. Any phone. */
+    Guided,
 }

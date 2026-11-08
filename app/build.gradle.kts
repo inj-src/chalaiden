@@ -55,5 +55,10 @@ dependencies {
     // Bundled model: works offline from first launch, no Play Services download.
     implementation("com.google.mlkit:text-recognition:16.0.1")
 
+    // Shizuku: the same shell-level helper as root, for phones without root (started over Wireless Debugging).
+    val shizuku = "13.1.5"
+    implementation("dev.rikka.shizuku:api:$shizuku")
+    implementation("dev.rikka.shizuku:provider:$shizuku")
+
     testImplementation("junit:junit:4.13.2")
 }

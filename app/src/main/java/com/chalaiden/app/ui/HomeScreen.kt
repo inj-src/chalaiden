@@ -37,6 +37,15 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.unit.sp
 import com.chalaiden.app.R
 import com.chalaiden.app.ui.components.AppIcons
@@ -57,14 +66,21 @@ fun HomeScreen(
     onCashOut: () -> Unit,
     onBalance: () -> Unit,
     onSetup: () -> Unit,
+    /** How Chalaiden answers bKash right now, shown in the menu: "With root", "Guided mode"… */
+    setupStatus: String = "",
+    keyboardOff: Boolean = false,
+    onFixKeyboard: () -> Unit = {},
 ) {
     val t = tokens
     Column(
         Modifier.fillMaxSize().background(t.bg).systemBarsPadding().verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp),
     ) {
+        // The menu sits in the top-right corner; the brand below it is the header.
+        Box(Modifier.fillMaxWidth().height(48.dp)) {
+            HomeMenu(setupStatus, onSetup, Modifier.align(Alignment.CenterEnd).offset(x = 12.dp))
+        }
         // The brand is the header: the launcher mark over the wordmark, large.
-        Spacer(Modifier.height(48.dp))
         Image(
             painterResource(R.drawable.logo_mark),
             contentDescription = null,
@@ -83,6 +99,24 @@ fun HomeScreen(
         }
 
         Spacer(Modifier.height(40.dp))
+        if (keyboardOff) {
+            // A session was cut off before it could switch the keyboards back on, and no root or Shizuku is
+            // here to do it now; the user can, in Settings.
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable(role = Role.Button, onClick = onFixKeyboard)
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(t.error))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Your keyboard is off", style = Type.title, color = t.ink)
+                    Text("Turn it back on in Settings, or start Shizuku and reopen Chalaiden", style = Type.label, color = t.inkSoft)
+                }
+                Icon(AppIcons.ChevronRight, contentDescription = null, tint = t.inkSoft, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.height(16.dp))
+        }
         if (!setupDone) {
             Row(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable(role = Role.Button, onClick = onSetup)
@@ -153,5 +187,38 @@ private fun SimPill(sims: List<Sim>, simId: Int?, onSelect: (Int) -> Unit) {
             }
         }
         Text("Change", style = Type.label, color = t.accent)
+    }
+}
+
+/** The ⋮ button in Home's top-right corner and its menu. Setup is always one tap away from here. */
+@Composable
+private fun HomeMenu(setupStatus: String, onSetup: () -> Unit, modifier: Modifier = Modifier) {
+    val t = tokens
+    var open by remember { mutableStateOf(false) }
+    Box(modifier) {
+        Box(
+            Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Menu") { open = true },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(AppIcons.More, contentDescription = "Menu", tint = t.ink, modifier = Modifier.size(22.dp))
+        }
+        DropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            shape = RoundedCornerShape(18.dp),
+            containerColor = t.raised,
+            offset = DpOffset((-8).dp, 0.dp),
+        ) {
+            DropdownMenuItem(
+                text = {
+                    Column(Modifier.padding(vertical = 4.dp)) {
+                        Text("Set up", style = Type.body, color = t.ink)
+                        if (setupStatus.isNotEmpty()) Text(setupStatus, style = Type.label, color = t.inkSoft)
+                    }
+                },
+                onClick = { open = false; onSetup() },
+                modifier = Modifier.widthIn(min = 200.dp),
+            )
+        }
     }
 }

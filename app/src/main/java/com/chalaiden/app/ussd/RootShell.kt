@@ -4,9 +4,9 @@ import java.io.Closeable
 import java.io.IOException
 
 /**
- * One long-lived root shell. Commands are written to its stdin and the output read back up to a
+ * One long-lived privileged shell: root's `su`, or Shizuku's shell-level `sh` (see [Backend]). Commands are written to its stdin and the output read back up to a
  * per-command marker, so the shell itself never carries replies in its arguments. The `input text`
- * child it runs does, briefly; only root can read another app's process arguments on Android.
+ * child it runs does, briefly; only root or the shell user can read another app's process arguments on Android.
  * Calls are serialised, so several threads may share one shell.
  */
 class RootShell private constructor(private val proc: Process) : Closeable {
@@ -24,7 +24,7 @@ class RootShell private constructor(private val proc: Process) : Closeable {
         writer.flush()
         val out = StringBuilder()
         while (true) {
-            val line = reader.readLine() ?: throw IOException("root shell closed")
+            val line = reader.readLine() ?: throw IOException("privileged shell closed")
             // Output without a final newline (uiautomator's XML) gets the marker glued to its last line.
             if (line.endsWith(marker)) {
                 out.append(line.removeSuffix(marker))
@@ -44,13 +44,17 @@ class RootShell private constructor(private val proc: Process) : Closeable {
     }
 
     companion object {
-        /** Opens a root shell, or null if root is unavailable or denied. */
-        fun open(): RootShell? = runCatching {
-            val p = ProcessBuilder("su").redirectErrorStream(true).start()
-            RootShell(p).also { if (!it.exec("id").contains("uid=0")) { it.close(); return null } }
+        /** Opens a privileged shell through [backend] (root by default), or null if it is unavailable or denied. */
+        fun open(backend: Backend = Backend.Root): RootShell? = runCatching {
+            val p = when (backend) {
+                Backend.Root -> ProcessBuilder("su").redirectErrorStream(true).start()
+                Backend.Shizuku -> ShizukuAccess.newShell()
+            }
+            RootShell(p).also { sh ->
+                // Shizuku can't merge stderr into stdout like redirectErrorStream; the shell does it instead.
+                val id = sh.exec(if (backend == Backend.Shizuku) "exec 2>&1; id" else "id")
+                if (!backend.accepts(id)) { sh.close(); return null }
+            }
         }.getOrNull()
-
-        /** Quick check used by setup and readiness, without holding a shell open. */
-        fun isAvailable(): Boolean = open()?.use { true } ?: false
     }
 }

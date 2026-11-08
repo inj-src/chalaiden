@@ -35,10 +35,13 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import com.chalaiden.app.keyboard.ChalaidenKeyboard
 import kotlinx.coroutines.withContext
 import com.chalaiden.app.ui.AmountScreen
 import com.chalaiden.app.ui.HomeScreen
-import com.chalaiden.app.ui.ManualScreen
+import com.chalaiden.app.ui.GuideCover
 import com.chalaiden.app.ui.NumberScreen
 import com.chalaiden.app.ui.ResultScreen
 import com.chalaiden.app.ui.RunCover
@@ -47,14 +50,19 @@ import com.chalaiden.app.ui.RunOverlay
 import com.chalaiden.app.ui.theme.tokens
 import com.chalaiden.app.ui.ScanScreen
 import com.chalaiden.app.ui.SetupScreen
+import com.chalaiden.app.ui.MethodGuideScreen
 import com.chalaiden.app.ui.theme.ChalaidenTheme
+import com.chalaiden.app.ussd.Backend
 import com.chalaiden.app.ussd.Dialer
 import com.chalaiden.app.ussd.FlowKind
 import com.chalaiden.app.ussd.Flows
+import com.chalaiden.app.ussd.Method
 import com.chalaiden.app.ussd.Outcome
+import com.chalaiden.app.ussd.GuideSession
 import com.chalaiden.app.ussd.Prefs
-import com.chalaiden.app.ussd.Root
-import com.chalaiden.app.ussd.RootUssdDriver
+import com.chalaiden.app.ussd.Privilege
+import com.chalaiden.app.ussd.ShizukuAccess
+import com.chalaiden.app.ussd.UssdDriver
 import com.chalaiden.app.ussd.RunState
 import com.chalaiden.app.ussd.UssdFlow
 import com.chalaiden.app.ussd.UssdSession
@@ -68,18 +76,43 @@ private sealed interface Screen {
     data object Running : Screen
     data class Result(val flow: UssdFlow, val outcome: Outcome) : Screen
     data class Setup(val then: UssdFlow?) : Screen
-    data class Manual(val flow: UssdFlow) : Screen
+    /** Step-by-step set-up for one way of answering bKash, opened from Setup. */
+    data class MethodGuide(val method: Method) : Screen
 }
 
 class MainActivity : ComponentActivity() {
     private val stack = mutableStateListOf<Screen>(Screen.Home)
     private val prefs by lazy { Prefs(this) }
 
-    /** Bumped when setup changes outside Compose (root fixes), so screens re-check readiness. */
+    /** Bumped when setup changes outside Compose (root or Shizuku fixes), so screens re-check readiness. */
     private var setupTick by mutableIntStateOf(0)
 
     /** Cached result of the last root check; readiness reads this instead of spawning `su` in composition. */
     @Volatile private var rootOk = false
+
+    /** Same for Shizuku, which is only tried without root. */
+    @Volatile private var shizukuOk = false
+    private var stopWatchingShizuku: (() -> Unit)? = null
+
+    /**
+     * Debug builds only: pretend root (or root and Shizuku) isn't there, to try the other modes on a rooted
+     * phone. `adb shell am start -n com.chalaiden.app/.MainActivity --es mode shizuku|guided|auto`.
+     */
+    @Volatile private var debugMode: String? = null
+
+    /**
+     * Debug builds only: pretend Shizuku is in this state, to see each path of its guide without
+     * uninstalling it. `--es shizuku_status NotInstalled|NotRunning|Outdated|NeedsPermission|Denied`.
+     */
+    private var debugShizuku by mutableStateOf<ShizukuAccess.Status?>(null)
+
+    private fun shizukuStatus(): ShizukuAccess.Status = debugShizuku ?: ShizukuAccess.status(this)
+
+    /** Guided mode: waiting for the keyboard picker to close before dialling (see [startGuided]). */
+    private var pendingGuide: UssdFlow? = null
+
+    /** Ends the guide once Chalaiden is back in front for good (bKash's dialog closed). */
+    private var guideEnd: Job? = null
 
     /** Which way the last navigation went, so screens slide in from the right side. */
     private var forward by mutableStateOf(true)
@@ -88,24 +121,103 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(SystemBarStyle.dark(android.graphics.Color.TRANSPARENT), SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         RunCover.attach(this)
+        GuideSession.bind(this)
+        GuideCover.attach(this)
         // "Hold to pay" is pressed on the cover, but only a foreground activity can dial *247#.
         UssdSession.starter = { flow -> drive(flow) }
+        // Shizuku hands over its binder a moment after launch, and loses it when it stops: re-check then.
+        stopWatchingShizuku = ShizukuAccess.watch { checkSetup() }
         handle(intent)
+        // First launch: phone access was never given, so open on the setup steps.
+        if (savedInstanceState == null && !Dialer.hasPermissions(this) && stack.toList() == listOf(Screen.Home)) {
+            stack += Screen.Setup(then = null)
+        }
         setContent { ChalaidenTheme { App() } }
     }
 
     override fun onResume() {
         super.onResume()
-        checkRoot()
+        GuideSession.setAppVisible(true)
+        GuideSession.consumeFinished()
+        checkSetup()
     }
 
-    /** Grants what root can grant (permissions, the overlay) and refreshes readiness. Never enables Accessibility. */
-    private fun checkRoot(then: () -> Unit = {}) {
+    override fun onPause() {
+        super.onPause()
+        GuideSession.setAppVisible(false)
+    }
+
+    /**
+     * bKash's USSD dialog is a window of the phone app, not an activity: Chalaiden stays resumed under it
+     * and only loses focus. So the guide follows focus, and floats over that dialog.
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        val front = hasFocus && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+        GuideSession.setAppVisible(front)
+        guideEnd?.cancel()
+        if (!front) return
+        // The keyboard picker closed: now open bKash's menu.
+        pendingGuide?.let { pendingGuide = null; return dialGuided(it) }
+        // bKash's dialog is gone and Chalaiden stayed in front: the guide is over. The wait rides out
+        // the moment between two bKash prompts when no dialog is up.
+        if (GuideSession.state.value != null) {
+            val back = System.currentTimeMillis()
+            guideEnd = lifecycleScope.launch {
+                delay(2_500)
+                if (hasWindowFocus()) GuideSession.end(GuideSession.End.Gone, at = back)
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        stopWatchingShizuku?.invoke()
+        stopWatchingShizuku = null
+        super.onDestroy()
+    }
+
+    /**
+     * Grants what root (or, without root, Shizuku) can grant: permissions and the overlay. Then refreshes
+     * readiness. Never enables Accessibility.
+     */
+    private fun checkSetup(then: () -> Unit = {}) {
         lifecycleScope.launch {
-            rootOk = withContext(Dispatchers.IO) { Root.ensureSetup(this@MainActivity) }
+            val (root, shizuku) = withContext(Dispatchers.IO) {
+                val mode = debugMode
+                val root = mode == null && Privilege.ensureSetup(this@MainActivity, Backend.Root)
+                // Checked every time, even with root: Setup offers each way that works, and Shizuku stops at
+                // each reboot and may be started again at any point.
+                val shizuku = mode != "guided" && ShizukuAccess.isReady(this@MainActivity) &&
+                    Privilege.ensureSetup(this@MainActivity, Backend.Shizuku)
+                root to shizuku
+            }
+            rootOk = root
+            shizukuOk = shizuku
             setupTick++
             then()
         }
+    }
+
+    /**
+     * What the automatic driver runs on: the way the user chose in Setup, if it works; with no choice yet,
+     * root first, then Shizuku. Null means guided mode or setup.
+     */
+    private fun backend(): Backend? = when (prefs.method) {
+        Method.Root -> Backend.Root.takeIf { rootOk }
+        Method.Shizuku -> Backend.Shizuku.takeIf { shizukuOk }
+        Method.Guided -> null
+        null -> when {
+            rootOk -> Backend.Root
+            shizukuOk -> Backend.Shizuku
+            else -> null
+        }
+    }
+
+    /** The way bKash gets answered right now, or null if none works yet. */
+    private fun inUse(): Method? = when (backend()) {
+        Backend.Root -> Method.Root
+        Backend.Shizuku -> Method.Shizuku
+        null -> Method.Guided.takeIf { prefs.method == Method.Guided }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -114,6 +226,23 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handle(intent: Intent?) {
+        if (BuildConfig.DEBUG && intent?.hasExtra("mode") == true) {
+            debugMode = intent.getStringExtra("mode")?.takeIf { it == "shizuku" || it == "guided" }
+            checkSetup()
+        }
+        if (BuildConfig.DEBUG && intent?.hasExtra("shizuku_status") == true) {
+            debugShizuku = ShizukuAccess.Status.entries.firstOrNull { it.name == intent.getStringExtra("shizuku_status") }
+        }
+        // Debug builds only: show the guided card for a made-up payment, without dialling.
+        if (BuildConfig.DEBUG && intent?.getBooleanExtra("guide_demo", false) == true) {
+            val demo = Flows.payment("01712345678", "250", null).copy(groups = listOf(5, 3, 3))
+            stack.clear()
+            stack += Screen.Home
+            GuideSession.start(demo)
+        }
+        if (BuildConfig.DEBUG && intent?.hasExtra("ussd_probe") == true) {
+            com.chalaiden.app.ussd.UssdProbe.send(this, intent.getStringExtra("ussd_probe").orEmpty(), simId())
+        }
         if (intent?.action == ACTION_SCAN && !UssdSession.isActive) {
             stack.clear()
             stack += listOf(Screen.Home, Screen.Scan(FlowKind.Payment))
@@ -125,7 +254,26 @@ class MainActivity : ComponentActivity() {
     private fun replaceTop(s: Screen) { forward = true; stack[stack.lastIndex] = s }
     private fun home() { forward = false; stack.clear(); stack += Screen.Home }
 
-    private fun ready() = Dialer.hasPermissions(this) && simId() != null && rootOk
+    private fun phoneReady() = Dialer.hasPermissions(this) && simId() != null
+
+    /** Nothing left to set up: automatic answering works, or the user chose guided mode. */
+    private fun ready() = phoneReady() && inUse() != null
+
+    /** For Home's menu: how bKash gets answered now. */
+    private fun setupStatus(): String = when {
+        !phoneReady() -> "Not finished"
+        else -> when (inUse()) {
+            Method.Root -> "Automatic, with root"
+            Method.Shizuku -> "Automatic, with Shizuku"
+            Method.Guided -> "Guided mode"
+            null -> "Not finished"
+        }
+    }
+
+    /** A killed session left the keyboards off, and neither root nor Shizuku is here to turn them back on. */
+    private fun keyboardOff(): Boolean = prefs.imeToRestore != null && !UssdSession.isActive &&
+        runCatching { getSystemService(android.view.inputmethod.InputMethodManager::class.java).enabledInputMethodList.isEmpty() }
+            .getOrDefault(false)
 
     private fun simId(): Int? {
         val sims = Dialer.sims(this)
@@ -134,8 +282,41 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun start(flow: UssdFlow) {
-        if (ready()) return run(flow)
-        checkRoot { if (ready()) run(flow) else push(Screen.Setup(then = flow)) }
+        if (phoneReady() && backend() != null) return run(flow)
+        checkSetup {
+            when {
+                phoneReady() && backend() != null -> run(flow)
+                phoneReady() && prefs.method == Method.Guided -> startGuided(flow)
+                else -> push(Screen.Setup(then = flow))
+            }
+        }
+    }
+
+    /**
+     * Guided mode: straight to bKash's menu, with the card floating over it. With the Chalaiden keyboard
+     * switched on, Android's keyboard picker comes first (only the user may change keyboards); the dial
+     * waits for it to close, see [onWindowFocusChanged].
+     */
+    private fun startGuided(flow: UssdFlow) {
+        if (!android.provider.Settings.canDrawOverlays(this) && !ChalaidenKeyboard.isEnabled(this)) {
+            return push(Screen.Setup(then = flow))
+        }
+        home()
+        if (ChalaidenKeyboard.isEnabled(this) && !ChalaidenKeyboard.isCurrent(this) && ChalaidenKeyboard.pick(this)) {
+            pendingGuide = flow
+            // If the picker never took focus (some phones refuse it), dial anyway.
+            lifecycleScope.launch {
+                delay(800)
+                if (pendingGuide == flow && hasWindowFocus()) { pendingGuide = null; dialGuided(flow) }
+            }
+        } else {
+            dialGuided(flow)
+        }
+    }
+
+    private fun dialGuided(flow: UssdFlow) {
+        GuideSession.start(flow) // before dialling, so the card is ready as bKash's dialog comes up
+        runCatching { startActivity(Dialer.callIntent(this, simId())) }.onFailure { GuideSession.end(GuideSession.End.Closed) }
     }
 
     /** Shows the PIN screen. Nothing is dialled until "Hold to pay" is pressed (see [drive]). */
@@ -149,7 +330,8 @@ class MainActivity : ComponentActivity() {
         // Driver sweeps leftover dialogs and drives the menu; the activity dials, because the
         // USSD dialog only launches from a foreground app (OxygenOS blocks it otherwise).
         val sim = simId()
-        RootUssdDriver.start(this, flow) {
+        // Root unless only Shizuku works; a backend that has gone since ends the session as not started.
+        UssdDriver.start(this, flow, backend() ?: Backend.Root) {
             withContext(Dispatchers.Main) {
                 runCatching {
                     startActivity(Dialer.callIntent(this@MainActivity, sim))
@@ -174,7 +356,7 @@ class MainActivity : ComponentActivity() {
                 UssdSession.clear()
             }
         }
-        @Suppress("UNUSED_VARIABLE") val tick = setupTick // re-read readiness after root fixes
+        @Suppress("UNUSED_VARIABLE") val tick = setupTick // re-read readiness after root or Shizuku fixes
         BackHandler(enabled = stack.size > 1 && stack.last() != Screen.Running) { pop() }
         // On the PIN screen, back leaves it (closing a warm menu); once paying, back does nothing.
         BackHandler(enabled = stack.lastOrNull() == Screen.Running && session?.confirmed == false) {
@@ -208,11 +390,14 @@ class MainActivity : ComponentActivity() {
                 simId = setupTick.let { simId() }, // re-read after a SIM change
                 onSelectSim = { prefs.simSubscriptionId = it; setupTick++ },
                 setupDone = ready(),
+                keyboardOff = setupTick.let { keyboardOff() },
+                onFixKeyboard = { runCatching { startActivity(Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS)) } },
                 onPay = { push(Screen.Scan(FlowKind.Payment)) },
                 onSend = { push(Screen.Number(FlowKind.SendMoney, "", null)) },
                 onCashOut = { push(Screen.Number(FlowKind.CashOut, "", null)) },
                 onBalance = { start(Flows.balance()) },
                 onSetup = { push(Screen.Setup(then = null)) },
+                setupStatus = setupTick.let { setupStatus() },
             )
             is Screen.Scan -> ScanScreen(
                 onRead = { read ->
@@ -260,12 +445,25 @@ class MainActivity : ComponentActivity() {
             is Screen.Setup -> SetupScreen(
                 prefs = prefs,
                 rootOk = rootOk,
-                onRetryRoot = { checkRoot() },
+                shizukuOk = shizukuOk,
+                shizuku = setupTick.let { shizukuStatus() },
+                inUse = setupTick.let { inUse() },
+                onChoose = { prefs.method = it; checkSetup() },
+                onGuide = { push(Screen.MethodGuide(it)) },
+                onRecheck = { checkSetup() },
                 onDone = { pop(); screen.then?.let(::start) },
-                onManual = screen.then?.let { flow -> { replaceTop(Screen.Manual(flow)) } },
                 onBack = ::pop,
             )
-            is Screen.Manual -> ManualScreen(screen.flow, simId(), onBack = ::pop)
+            is Screen.MethodGuide -> MethodGuideScreen(
+                method = screen.method,
+                shizuku = setupTick.let { shizukuStatus() },
+                shizukuOk = shizukuOk,
+                rootOk = rootOk,
+                inUse = setupTick.let { inUse() },
+                onRecheck = { checkSetup() },
+                onUse = { prefs.method = it; checkSetup(); pop() },
+                onBack = ::pop,
+            )
         }
     }
 

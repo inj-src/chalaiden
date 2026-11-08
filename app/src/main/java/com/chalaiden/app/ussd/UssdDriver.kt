@@ -15,12 +15,12 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * Drives the system USSD dialog with root instead of an accessibility service: it reads the dialog
+ * Drives the system USSD dialog with root or Shizuku ([Backend]) instead of an accessibility service: it reads the dialog
  * through a [UssdScreen], feeds the text to the shared [UssdEngine] through [UssdSession], and
  * performs the engine's answers. The fast [HelperScreen] is used when it starts; otherwise the slower
  * [DumpScreen]. Either way Chalaiden's cover ([com.chalaiden.app.ui.RunCover]) hides the dialogs.
  */
-object RootUssdDriver {
+object UssdDriver {
     private const val TAG = "ChalaidenUssd"
 
     /** The phone dialog may vanish between exchanges for a moment; this long without it means it's gone. */
@@ -56,17 +56,20 @@ object RootUssdDriver {
         runCatching { traceFile?.appendText("${System.currentTimeMillis() % 100_000} $msg\n") }
     }
 
-    /** [dial] opens the USSD session; it must be a foreground launch, so the activity runs it, not root. */
-    fun start(context: Context, flow: UssdFlow, dial: suspend () -> Unit) {
+    /**
+     * [dial] opens the USSD session; it must be a foreground launch, so the activity runs it, not the
+     * shell. [backend] is where the shell and the helper come from; everything after that is the same.
+     */
+    fun start(context: Context, flow: UssdFlow, backend: Backend = Backend.Root, dial: suspend () -> Unit) {
         stop()
         val gen = ++generation
         val prefs = Prefs(context.applicationContext)
         val apk = context.applicationInfo.sourceDir
         traceFile = java.io.File(context.filesDir, "driver.log").also { it.writeText("") }
         UssdSession.begin(flow)
-        // Never on the caller's thread: the PIN arrives from the UI, and su I/O would block it.
+        // Never on the caller's thread: the PIN arrives from the UI, and shell I/O would block it.
         UssdSession.performer = { action -> io.launch { runCatching { execute(action, gen = gen) }.onFailure { fail(gen, it) } } }
-        job = io.launch { runCatching { drive(gen, prefs, apk, dial) }.onFailure { fail(gen, it) } }
+        job = io.launch { runCatching { drive(gen, prefs, apk, backend, dial) }.onFailure { fail(gen, it) } }
     }
 
     fun stop() {
@@ -107,8 +110,8 @@ object RootUssdDriver {
         sh.exec(cmds.joinToString("; "))
     }
 
-    private suspend fun CoroutineScope.drive(gen: Int, prefs: Prefs, apk: String, dial: suspend () -> Unit) {
-        val sh = RootShell.open() ?: return fail(gen, IllegalStateException("No root"))
+    private suspend fun CoroutineScope.drive(gen: Int, prefs: Prefs, apk: String, backend: Backend, dial: suspend () -> Unit) {
+        val sh = RootShell.open(backend) ?: return fail(gen, IllegalStateException("No $backend shell"))
         fun current() = gen == generation
         if (!current()) return sh.close()
         shell = sh
@@ -126,11 +129,11 @@ object RootUssdDriver {
                 prefs.imeToRestore = saved
                 sh.exec(saved.lines().joinToString("; ") { "ime disable '$it' >/dev/null 2>&1" })
             }
-            var ui: UssdScreen = HelperScreen.open(apk) ?: DumpScreen(sh)
+            var ui: UssdScreen = HelperScreen.open(apk, backend) ?: DumpScreen(sh)
             opened = ui
             if (!current()) return
             screen = ui
-            trace("screen: ${ui::class.simpleName}, keyboards off: ${keyboards?.lines()?.size ?: 0}")
+            trace("$backend screen: ${ui::class.simpleName}, keyboards off: ${keyboards?.lines()?.size ?: 0}")
             sweep(ui)
             dial()
             trace("dialled")

@@ -26,6 +26,13 @@ object AppIcons {
 
     val ChevronRight = stroke("chevron-right") { moveTo(9.5f, 5.5f); lineTo(16f, 12f); lineTo(9.5f, 18.5f) }
 
+    val ChevronDown = stroke("chevron-down") { moveTo(5.5f, 9.5f); lineTo(12f, 16f); lineTo(18.5f, 9.5f) }
+
+    val ChevronUp = stroke("chevron-up") { moveTo(5.5f, 14.5f); lineTo(12f, 8f); lineTo(18.5f, 14.5f) }
+
+    /** Two overlapping sheets: copy to the clipboard. */
+    val Copy = svg("copy", "M9 9h9.5a1.5 1.5 0 0 1 1.5 1.5V20a1.5 1.5 0 0 1-1.5 1.5H9A1.5 1.5 0 0 1 7.5 20v-9.5A1.5 1.5 0 0 1 9 9z", "M4 15V5.5A1.5 1.5 0 0 1 5.5 4H15")
+
     val Backspace = stroke("backspace") {
         moveTo(8.5f, 5.5f); lineTo(20f, 5.5f); lineTo(20f, 18.5f); lineTo(8.5f, 18.5f); lineTo(3f, 12f); close()
         moveTo(11f, 9.5f); lineTo(16f, 14.5f); moveTo(16f, 9.5f); lineTo(11f, 14.5f)
@@ -87,6 +94,16 @@ object AppIcons {
         moveTo(8f, 5f); lineTo(5.5f, 5f); lineTo(5.5f, 20.5f); lineTo(18.5f, 20.5f); lineTo(18.5f, 5f); lineTo(16f, 5f)
         moveTo(9f, 3.5f); lineTo(15f, 3.5f); lineTo(15f, 6.5f); lineTo(9f, 6.5f); close()
     }
+
+    /** Three dots, for a menu. Filled: thin strokes read as rings at this size. */
+    val More = ImageVector.Builder("more", 24.dp, 24.dp, 24f, 24f).apply {
+        listOf(5f, 12f, 19f).forEach { y ->
+            addPath(
+                pathData = addPathNodes("M12 ${y - 1.9f}a1.9 1.9 0 1 1 0 3.8a1.9 1.9 0 1 1 0-3.8z"),
+                fill = SolidColor(Color.Black),
+            )
+        }
+    }.build()
 
     /** Same stroke as [stroke], from SVG path data (easier for curves and rounded corners). */
     private fun svg(name: String, vararg d: String): ImageVector =

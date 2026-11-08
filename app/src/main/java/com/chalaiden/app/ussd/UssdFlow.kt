@@ -30,9 +30,9 @@ object Flows {
     /**
      * Sent when the user leaves the reference empty (bKash requires one), and hidden wherever bKash echoes it.
      * Fixed, so it can be recognised; short, letters and digits only, because bKash rejects symbols
-     * ("<no-reference>" came back invalid); and not something a person would type as a real reference.
+     * ("<no-reference>" came back invalid); and it says where the payment came from.
      */
-    const val DEFAULT_REFERENCE = "ZQX7K"
+    const val DEFAULT_REFERENCE = "ChalaiDen"
 
     /**
      * Characters bKash takes in a reference and `input text` can type: ASCII letters, digits and

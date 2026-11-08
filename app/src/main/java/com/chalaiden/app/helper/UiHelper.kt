@@ -11,10 +11,10 @@ import org.json.JSONObject
 import kotlin.system.exitProcess
 
 /**
- * Root helper, started by [com.chalaiden.app.ussd.RootUssdDriver] with `app_process` for the length of
- * one session. It holds a single UiAutomation connection (what `uiautomator dump` opens and closes on
- * every call, at ~2 s each), so reading the phone's USSD dialog takes milliseconds and answers go in
- * with node actions instead of injected keys.
+ * Privileged helper, started as root or as Shizuku's shell user by [com.chalaiden.app.ussd.UssdDriver]
+ * with `app_process` for the length of one session. It holds a single UiAutomation connection (what
+ * `uiautomator dump` opens and closes on every call, at ~2 s each), so reading the phone's USSD dialog
+ * takes milliseconds and answers go in with node actions instead of injected keys.
  *
  * Nothing is registered as an Accessibility service: the connection exists only while this process
  * runs, and the process exits when the app closes its stdin.

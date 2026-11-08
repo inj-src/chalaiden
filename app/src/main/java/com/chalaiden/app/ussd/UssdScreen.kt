@@ -8,7 +8,7 @@ import java.util.concurrent.TimeUnit
 /** One look at the phone app's USSD window. [raw] is backend-specific (the dump XML for [DumpScreen]). */
 internal data class Look(val dialog: Dialog?, val field: String?, val password: Boolean, val raw: String? = null)
 
-/** How [RootUssdDriver] reads and answers the phone's USSD dialog. */
+/** How [UssdDriver] reads and answers the phone's USSD dialog. */
 internal interface UssdScreen : Closeable {
     /** Milliseconds between looks; a cheap look can afford to poll often. */
     val pollMillis: Long
@@ -30,7 +30,7 @@ internal interface UssdScreen : Closeable {
 }
 
 /**
- * Fast path: [com.chalaiden.app.helper.UiHelper] running as root for the session. A look takes a few
+ * Fast path: [com.chalaiden.app.helper.UiHelper] running as root (or Shizuku's shell user) for the session. A look takes a few
  * milliseconds and answers go in as node actions, so neither the cover nor the keyboard matters.
  */
 internal class HelperScreen private constructor(private val proc: Process) : UssdScreen {
@@ -89,9 +89,12 @@ internal class HelperScreen private constructor(private val proc: Process) : Uss
         private const val REPLY_TIMEOUT_SECONDS = 5L
         private const val READY_TIMEOUT_SECONDS = 8L
 
-        /** Starts the helper from Chalaiden's own APK. Null if root, the helper or its connection fails. */
-        fun open(apkPath: String): HelperScreen? = runCatching {
-            val p = ProcessBuilder("su").start()
+        /** Starts the helper from Chalaiden's own APK through [backend]. Null if the shell, the helper or its connection fails. */
+        fun open(apkPath: String, backend: Backend = Backend.Root): HelperScreen? = runCatching {
+            val p = when (backend) {
+                Backend.Root -> ProcessBuilder("su").start()
+                Backend.Shizuku -> ShizukuAccess.newShell()
+            }
             val screen = HelperScreen(p)
             screen.writer.write("exec env CLASSPATH='$apkPath' app_process /system/bin com.chalaiden.app.helper.UiHelper 2>/dev/null\n")
             screen.writer.flush()

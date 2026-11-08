@@ -285,10 +285,10 @@ class UssdEngineTest {
     }
 
     @Test fun defaultReferenceIsRecognisedWhenEchoed() {
-        assertTrue(Flows.isDefaultReference("ZQX7K"))
-        assertTrue(Flows.isDefaultReference(" zqx7k "))
+        assertTrue(Flows.isDefaultReference("ChalaiDen"))
+        assertTrue(Flows.isDefaultReference(" CHALAIDEN "))
         assertTrue(!Flows.isDefaultReference("1"))
-        assertEquals("ZQX7K", Flows.sendMoney("01400635085", "10", "  ").reference)
+        assertEquals("ChalaiDen", Flows.sendMoney("01400635085", "10", "  ").reference)
     }
 
     @Test fun referenceKeepsOnlyWhatBkashAccepts() {

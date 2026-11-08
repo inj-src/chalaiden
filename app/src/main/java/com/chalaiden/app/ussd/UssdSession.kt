@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * The single running session, shared by the screens (which start it and show the result)
- * and [RootUssdDriver] (which feeds it dialogs and performs its actions).
+ * and [UssdDriver] (which feeds it dialogs and performs its actions).
  */
 object UssdSession {
     /**
@@ -44,12 +44,12 @@ object UssdSession {
     private var confirmed = false
 
     /**
-     * Starts the root driver for a flow; set by the activity, because only a foreground activity can
+     * Starts the automatic driver for a flow; set by the activity, because only a foreground activity can
      * dial `*247#`. Called on the first PIN digit, so the menu walks while the user types.
      */
     @Volatile var starter: ((UssdFlow) -> Unit)? = null
 
-    /** Performs an action on the phone dialog, off the caller's thread. Set by [RootUssdDriver]. */
+    /** Performs an action on the phone dialog, off the caller's thread. Set by [UssdDriver]. */
     @Volatile var performer: ((Action) -> Unit)? = null
 
     val isActive: Boolean get() = engine?.state.let { it != null && it !is RunState.Finished }
