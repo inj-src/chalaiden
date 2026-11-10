@@ -192,19 +192,35 @@ class KeyboardService : InputMethodService(), LifecycleOwner, SavedStateRegistry
      * bKash's box closed: Send (the next prompt follows within seconds), or the dialog went away for good
      * (Cancel, bKash timing out) while Chalaiden isn't in front to notice. With no new box for
      * [GONE_MILLIS], the guide is over, the same as when Chalaiden comes back to the front. That holds
-     * at the PIN too: Cancel there, or Send with bKash's answer shown without a box.
+     * at the PIN too: Cancel there, or Send with bKash's answer shown without a box ("Cannot pay self.",
+     * any failure, an OK-only receipt). After the PIN nothing more is asked of the user, so the wait
+     * there is short ([AFTER_PIN_MILLIS]).
      */
     override fun onFinishInput() {
+        super.onFinishInput()
+        boxClosed()
+    }
+
+    /**
+     * Android can drop the connection to bKash's box without finishing its input first, e.g. when the
+     * dialog is replaced by an OK-only one. Treated the same as the box closing, so the card can't stay up.
+     */
+    override fun onUnbindInput() {
+        super.onUnbindInput()
+        boxClosed()
+    }
+
+    private fun boxClosed() {
         val wasPhone = inPhoneBox
         inPhoneBox = false
-        super.onFinishInput()
         val guide = GuideSession.state.value
         if (!wasPhone || guide == null) return
-        if (guide.step.kind == GuideStep.Kind.Pin && pinTyped.intValue > 0) pinSent = true
+        val atPin = guide.step.kind == GuideStep.Kind.Pin
+        if (atPin && pinTyped.intValue > 0) pinSent = true
         val closedAt = System.currentTimeMillis()
         goneCheck?.cancel()
         goneCheck = scope.launch {
-            delay(GONE_MILLIS)
+            delay(if (pinSent) AFTER_PIN_MILLIS else GONE_MILLIS)
             if (!inPhoneBox) GuideSession.end(GuideSession.End.Gone, at = closedAt)
         }
     }
@@ -250,6 +266,9 @@ class KeyboardService : InputMethodService(), LifecycleOwner, SavedStateRegistry
     }
 
     override fun onDestroy() {
+        // Torn down mid-guide (the user switched keyboards, the system reclaimed it): nothing here can
+        // follow bKash any more, so the guide ends rather than wait on a box it will never hear about.
+        if (goneCheck?.isActive == true) GuideSession.end(GuideSession.End.Gone)
         goneCheck?.cancel()
         scope.cancel()
         registry.currentState = Lifecycle.State.DESTROYED
@@ -324,6 +343,13 @@ class KeyboardService : InputMethodService(), LifecycleOwner, SavedStateRegistry
 
 /** Longer than bKash ever takes to send its next prompt after a reply (seconds, on a slow network). */
 private const val GONE_MILLIS = 12_000L
+
+/**
+ * After the PIN box closes with digits in it. bKash's answer is either a new box (handled at once) or an
+ * OK-only message; either way the user has nothing left to do on the card. Long enough to ride out the
+ * moment the box closes before bKash's "Running USSD code…" takes its place.
+ */
+private const val AFTER_PIN_MILLIS = 2_500L
 
 private const val PIN_DIGITS = 5
 

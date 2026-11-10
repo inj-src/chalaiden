@@ -187,6 +187,23 @@ class UssdEngineTest {
         assertEquals("BK12AB34CD", (o as Outcome.Success).trxId)
     }
 
+    @Test fun refusalAfterPinIsFailed() {
+        // Seen on device, 2026-11-08: paying your own number.
+        for (text in listOf("Cannot pay self.", "Insufficient balance.", "Wrong PIN. Please try again", "Transaction limit exceeded")) {
+            val o = Outcomes.classify(FlowKind.Payment, text)
+            assertTrue(text, o is Outcome.Failed && o.pinSent)
+        }
+    }
+
+    @Test fun receiptWinsOverFailureWords() {
+        val o = Outcomes.classify(FlowKind.SendMoney, "Send Money Tk 10.00 to 01783007004 successful. Daily limit left Tk 24,990. TrxID BK12AB34CD")
+        assertTrue(o is Outcome.Success)
+    }
+
+    @Test fun unrecognisedReplyAfterPinStaysUnknown() {
+        assertTrue(Outcomes.classify(FlowKind.Payment, "Your request is being processed.") is Outcome.Unknown)
+    }
+
     @Test fun resumeOfferIsDeclinedThenMenuIsUsed() {
         val e = UssdEngine(Flows.sendMoney("01400635085", "10", null))
         // Seen on device: an unfinished session makes the next *247# ask this first; "2" gives a fresh menu.

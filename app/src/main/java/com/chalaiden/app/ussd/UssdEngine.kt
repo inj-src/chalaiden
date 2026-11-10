@@ -271,9 +271,17 @@ object Outcomes {
             Regex("""Tk\.?\s*[\d,]+""").containsMatchIn(text)
         ) return Outcome.Success(text, null)
 
-        // TODO(you): recognise bKash's failure replies (wrong PIN, low balance, limits…)
-        //  and return Outcome.Failed(text, pinSent = true) for them.
-
+        // No receipt. bKash's refusals are short sentences ("Cannot pay self.", "Insufficient balance",
+        // "Wrong PIN"); too many to list one by one, so they are caught by the words they share. A
+        // success always carries a TrxID (checked above), so a match here can't hide one.
+        if (FAILURE.containsMatchIn(text)) return Outcome.Failed(text, pinSent = true)
         return Outcome.Unknown(text)
     }
+
+    private val FAILURE = Regex(
+        """\b(cannot|can'?t|unable|not (?:allowed|permitted|valid|registered|eligible|found|active)|invalid|""" +
+            """incorrect|wrong|insufficient|exceed\w*|limit|fail\w*|declined|rejected|blocked|locked|""" +
+            """suspended|expired|try again|error|sorry|unsuccessful)\b""",
+        RegexOption.IGNORE_CASE,
+    )
 }

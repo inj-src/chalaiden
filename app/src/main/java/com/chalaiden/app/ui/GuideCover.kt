@@ -28,6 +28,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.chalaiden.app.ui.theme.ChalaidenTheme
 import com.chalaiden.app.ussd.GuideSession
+import com.chalaiden.app.ussd.GuideStep
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
@@ -53,6 +54,7 @@ object GuideCover {
     private var removal: Job? = null
     private const val FADE_MILLIS = 200
     private const val IDLE_MILLIS = 4 * 60_000L
+    private const val PIN_IDLE_MILLIS = 200_000L
 
     /** Call once; follows [GuideSession] from then on. */
     fun attach(context: Context) {
@@ -65,7 +67,8 @@ object GuideCover {
         scope.launch {
             GuideSession.state.collectLatest { guide ->
                 if (guide == null) return@collectLatest
-                delay(IDLE_MILLIS)
+                // At the PIN the card has no way to see bKash give up (~190 s), so it gives up just after.
+                delay(if (guide.step.kind == GuideStep.Kind.Pin) PIN_IDLE_MILLIS else IDLE_MILLIS)
                 GuideSession.end(GuideSession.End.Gone)
             }
         }
