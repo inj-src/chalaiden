@@ -12,8 +12,12 @@ android {
         applicationId = "com.chalaiden.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
+        // ML Kit's bundled OCR ships a ~11MB native engine per ABI. Phones are ARM; the x86 copies only serve
+        // emulators and cost ~22MB, so they are left out. (An x86 emulator can't install this build.)
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
     buildTypes {
@@ -61,4 +65,7 @@ dependencies {
     implementation("dev.rikka.shizuku:provider:$shizuku")
 
     testImplementation("junit:junit:4.13.2")
+    // On-device OCR checks against real card photos (ML Kit only runs on Android).
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
