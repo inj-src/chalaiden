@@ -35,6 +35,9 @@ class NumberLayoutTest {
     @Test fun fiveThreeThreeFromThePhoto() = assertEquals(listOf(5, 3, 3), groups("01896156558", "01896 156 558"))
     @Test fun fourThreeFour() = assertEquals(listOf(4, 3, 4), groups("01711234567", "0171 123 4567"))
 
+    @Test fun boxEdgesAreSkipped() =
+        assertEquals(true, NumberLayout.locate("01745606306", row("01|7 456063|06")) != null)
+
     @Test fun tiltedCardReadsTheSame() =
         assertEquals(listOf(5, 3, 3), groups("01331065077", "01331 065 077", degrees = 17.0))
 

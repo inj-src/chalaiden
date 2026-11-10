@@ -30,15 +30,21 @@ object NumberLayout {
 
     private class Digit(val char: Char, val glyph: Glyph, val breakBefore: Boolean)
 
-    /** [number]'s place in [glyphs] (one row, in reading order), or null if its digits aren't there in a run. */
-    fun locate(number: String, glyphs: List<Glyph>): NumberSpan? {
+    /**
+     * [number]'s place in [glyphs] (one row, in reading order), or null if its digits aren't there in a run.
+     * A '|' is a box edge unless the number was only found by reading it as a 1 (see [NumberExtractor.find]).
+     */
+    fun locate(number: String, glyphs: List<Glyph>): NumberSpan? =
+        locate(number, glyphs, pipeIsOne = false) ?: locate(number, glyphs, pipeIsOne = true)
+
+    private fun locate(number: String, glyphs: List<Glyph>, pipeIsOne: Boolean): NumberSpan? {
         val lenient = NumberExtractor.isLenient(glyphs.map { it.char }.joinToString(""))
         // Runs of digits, as NumberExtractor reads them: letters end a run; other marks ('-', '.',
         // a box edge) are skipped over but remembered as a break the card printed.
         val runs = mutableListOf(mutableListOf<Digit>())
         var marked = false
         for (g in glyphs) {
-            val d = NumberExtractor.digitOf(g.char, lenient)
+            val d = NumberExtractor.digitOf(g.char, lenient, pipeIsOne)
             when {
                 d != null -> { runs.last() += Digit(d, g, marked); marked = false }
                 g.char.isLetter() -> { runs += mutableListOf<Digit>(); marked = false }
