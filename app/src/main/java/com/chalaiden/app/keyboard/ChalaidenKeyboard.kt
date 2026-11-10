@@ -53,6 +53,7 @@ import com.chalaiden.app.ui.components.AppIcons
 import com.chalaiden.app.ui.theme.ChalaidenTheme
 import com.chalaiden.app.ui.theme.Type
 import com.chalaiden.app.ui.theme.tokens
+import com.chalaiden.app.vendor.PhoneQuirks
 import com.chalaiden.app.ussd.GuideSession
 import com.chalaiden.app.ussd.GuideStep
 import com.chalaiden.app.ussd.KeyMove
@@ -341,8 +342,8 @@ class KeyboardService : InputMethodService(), LifecycleOwner, SavedStateRegistry
     }
 }
 
-/** Longer than bKash ever takes to send its next prompt after a reply (seconds, on a slow network). */
-private const val GONE_MILLIS = 12_000L
+/** Longer than bKash ever takes to send its next prompt after a reply. */
+private const val GONE_MILLIS = PhoneQuirks.SLOWEST_REPLY_MILLIS
 
 /**
  * After the PIN box closes with digits in it. bKash's answer is either a new box (handled at once) or an

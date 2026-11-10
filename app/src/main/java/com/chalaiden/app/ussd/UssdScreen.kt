@@ -227,6 +227,8 @@ internal class DumpScreen(private val sh: RootShell) : UssdScreen {
         const val PHONE = "com.android.phone"
         // Deleted right after reading: the dump holds the confirmation details.
         const val DUMP = "uiautomator dump /data/local/tmp/cu.xml >/dev/null 2>&1 && cat /data/local/tmp/cu.xml; rm -f /data/local/tmp/cu.xml"
-        const val FOCUS = "dumpsys window 2>/dev/null | grep -m1 mCurrentFocus"
+        // Every display's focus, not just the first listed: vivo lists an extra display first whose
+        // focus is always null (V2445A, Android 15), so the first line never names the phone.
+        const val FOCUS = "dumpsys window 2>/dev/null | grep mCurrentFocus"
     }
 }

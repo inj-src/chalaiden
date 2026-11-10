@@ -54,6 +54,7 @@ import com.chalaiden.app.ui.ScanScreen
 import com.chalaiden.app.ui.SetupScreen
 import com.chalaiden.app.ui.MethodGuideScreen
 import com.chalaiden.app.ui.theme.ChalaidenTheme
+import com.chalaiden.app.vendor.PhoneQuirks
 import com.chalaiden.app.ussd.Backend
 import com.chalaiden.app.ussd.Dialer
 import com.chalaiden.app.ussd.FlowKind
@@ -166,11 +167,12 @@ class MainActivity : ComponentActivity() {
         // The keyboard picker closed: now open bKash's menu.
         pendingGuide?.let { pendingGuide = null; return dialGuided(it) }
         // bKash's dialog is gone and Chalaiden stayed in front: the guide is over. The wait rides out
-        // the moment between two bKash prompts when no dialog is up.
+        // the moment between two bKash prompts when no dialog is up, which on some phones lasts until
+        // bKash answers (see PhoneQuirks.closesDialogOnSend).
         if (GuideSession.state.value != null) {
             val back = System.currentTimeMillis()
             guideEnd = lifecycleScope.launch {
-                delay(2_500)
+                delay(PhoneQuirks.current.frontGapMillis)
                 if (hasWindowFocus()) GuideSession.end(GuideSession.End.Gone, at = back)
             }
         }
