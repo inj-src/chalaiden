@@ -218,7 +218,8 @@ private fun Camera(onRead: (NumberRead) -> Unit, onTypeInstead: () -> Unit, onGa
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             CircleButton(AppIcons.Photo, "From photo", size = 56, onClick = onGallery)
-            // The ring turns to the accent once a number is in view: pressing now takes it.
+            // The ring turns to the accent once a number is in view: pressing now takes it, and holding
+            // still takes it by itself (NumberAnalyzer). No countdown is shown.
             val ring by animateColorAsState(if (live != null) t.accent else Color.White, label = "shutter")
             Box(
                 Modifier.size(76.dp).clip(CircleShape).border(4.dp, ring, CircleShape).padding(8.dp).clip(CircleShape)

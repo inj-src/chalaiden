@@ -133,8 +133,8 @@ data class LiveNumber(val number: String, val groups: List<Int>, val span: Numbe
 
 /**
  * Reads camera frames and reports what it sees through [onLive], so the screen can box the number.
- * Nothing is taken until [capture]: then the number in view (or the frame, if there is none) goes to
- * [onCaptured], once.
+ * A number held steadily in view (see [Steady]) is taken by itself; [capture] takes what is in view
+ * now. Either way the number (or the frame, if there is none) goes to [onCaptured], once.
  *
  * Frames must arrive upright and as RGBA (see the scanner's ImageAnalysis setup). Each is read as a
  * still bitmap, the same path as gallery photos, so the corners OCR reports, the crop and the box
@@ -152,6 +152,8 @@ class NumberAnalyzer(
     /** The last frame a number was read in. A press uses it if it is recent, so it isn't lost to one blurry frame. */
     private var last: Sighting? = null
 
+    private val steady = Steady()
+
     fun capture() { wanted = true }
 
     override fun analyze(image: ImageProxy) {
@@ -164,6 +166,8 @@ class NumberAnalyzer(
             .getOrNull()?.let(NumberFinder::best)
         val seen = found?.let { (number, span) -> Sighting(frame, number, span, now) }
         if (seen != null) last = seen
+        // Held in view long enough: taken as if pressed, from this frame.
+        if (steady.feed(seen?.number, now)) wanted = true
         onLive(seen?.let { LiveNumber(it.number, it.span.groups ?: NumberLayout.fallback, it.span, frame.width, frame.height) })
         // Pressed with no number in view: hand over the photo so the user can type what they see.
         if (wanted) finish(seen?.let(::read) ?: NumberRead(null, frame))
