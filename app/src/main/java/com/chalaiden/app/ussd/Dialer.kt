@@ -75,12 +75,17 @@ class Prefs(context: Context) {
         set(value) = sp.edit().putLong("bkash_left_open_at", value).apply()
 
     /**
-     * A payment has gone through once: Home then folds its "What to scan" lesson into a link. A single flag,
-     * not a record of the payment; Chalaiden keeps no history.
+     * A payment has gone through once. A single flag, not a record of the payment; Chalaiden keeps no
+     * history. It folded Home's "What to scan" lesson into a link; nothing reads it since the lesson left Home.
      */
     var scanLearned: Boolean
         get() = sp.getBoolean("scan_learned", false)
         set(value) = sp.edit().putBoolean("scan_learned", value).apply()
+
+    /** Which design Home's brand wears (a position in `HomeDesign`): the one the user last swiped to. */
+    var homeDesign: Int
+        get() = sp.getInt("home_design", 0)
+        set(value) = sp.edit().putInt("home_design", value).apply()
 
     /** The keyboard a running session switched off, until it is switched back on. */
     var imeToRestore: String?

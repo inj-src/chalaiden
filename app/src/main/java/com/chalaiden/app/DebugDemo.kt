@@ -4,6 +4,7 @@ import com.chalaiden.app.ussd.FlowKind
 import com.chalaiden.app.ussd.Flows
 import com.chalaiden.app.ussd.Outcome
 import com.chalaiden.app.ussd.RunState
+import com.chalaiden.app.ussd.Sim
 import com.chalaiden.app.ussd.UssdFlow
 
 /**
@@ -14,8 +15,29 @@ import com.chalaiden.app.ussd.UssdFlow
  * States: pin, working, fee, confirming (the run screen); success, failed, failed_pin, busy, expired,
  * unknown, cancelled (the result screen); receipt (writes the shared receipt to cache/receipts and stops).
  * `worst` swaps the demo values for the longest ones each field can hold.
+ *
+ * Home: `--es home <demo|worst|nosim|pick>`, optionally `--ef fontscale 2.0` and `--ei width 300` (dp) to
+ * stand in for the phone's text size and a narrow window without changing the phone's own settings.
  */
 internal object DebugDemo {
+    /** What Home is fed, in place of the phone's SIMs, setup and keyboard state. */
+    data class HomeData(val sims: List<Sim>, val simId: Int?, val setupDone: Boolean, val keyboardOff: Boolean)
+
+    fun home(state: String): HomeData? = when (state) {
+        "demo" -> HomeData(listOf(Sim(1, 0, "Grameenphone"), Sim(2, 1, "Robi")), simId = 1, setupDone = true, keyboardOff = false)
+        // Every Home value at its worst at once: both callouts, a SIM with no carrier name (Dialer falls
+        // back to "SIM 2"), and one whose network name is the no-service text some phones report.
+        "worst" -> HomeData(
+            listOf(Sim(7, 0, "Emergency calls only"), Sim(8, 1, "SIM 2")),
+            simId = 8, setupDone = false, keyboardOff = true,
+        )
+        // No SIM in the phone, or none readable.
+        "nosim" -> HomeData(emptyList(), simId = null, setupDone = true, keyboardOff = false)
+        // Two SIMs and none chosen yet.
+        "pick" -> HomeData(listOf(Sim(1, 0, "Banglalink"), Sim(2, 1, "Teletalk")), simId = null, setupDone = true, keyboardOff = false)
+        else -> null
+    }
+
     sealed interface Target {
         data class Run(val flow: UssdFlow, val state: RunState, val confirmed: Boolean) : Target
         data class Result(val flow: UssdFlow, val outcome: Outcome) : Target

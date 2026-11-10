@@ -28,6 +28,8 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -105,6 +107,11 @@ class MainActivity : ComponentActivity() {
      * uninstalling it. `--es shizuku_status NotInstalled|NotRunning|Outdated|NeedsPermission|Denied`.
      */
     private var debugShizuku by mutableStateOf<ShizukuAccess.Status?>(null)
+
+    /** Debug builds only: Home's made-up data and stand-in text size and width (see [DebugDemo.home]). */
+    private var debugHome by mutableStateOf<DebugDemo.HomeData?>(null)
+    private var debugFontScale by mutableStateOf<Float?>(null)
+    private var debugWidth by mutableStateOf<Int?>(null)
 
     private fun shizukuStatus(): ShizukuAccess.Status = debugShizuku ?: ShizukuAccess.status(this)
 
@@ -238,6 +245,12 @@ class MainActivity : ComponentActivity() {
             stack.clear()
             stack += Screen.Home
             GuideSession.start(demo)
+        }
+        if (BuildConfig.DEBUG && intent?.hasExtra("home") == true) {
+            debugHome = DebugDemo.home(intent.getStringExtra("home").orEmpty())
+            debugFontScale = intent.getFloatExtra("fontscale", 0f).takeIf { it > 0f }
+            debugWidth = intent.getIntExtra("width", 0).takeIf { it > 0 }
+            stack.clear(); stack += Screen.Home
         }
         if (BuildConfig.DEBUG && intent?.hasExtra("demo") == true) {
             val target = DebugDemo.target(
@@ -393,20 +406,24 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun ScreenContent(screen: Screen) {
         when (screen) {
-            Screen.Home -> HomeScreen(
-                sims = Dialer.sims(this),
-                simId = setupTick.let { simId() }, // re-read after a SIM change
+            Screen.Home -> DebugFrame(debugFontScale, debugWidth) {
+              val fake = debugHome
+              HomeScreen(
+                sims = fake?.sims ?: Dialer.sims(this),
+                simId = if (fake != null) fake.simId else setupTick.let { simId() }, // re-read after a SIM change
                 onSelectSim = { prefs.simSubscriptionId = it; setupTick++ },
-                setupDone = ready(),
-                keyboardOff = setupTick.let { keyboardOff() },
+                setupDone = fake?.setupDone ?: ready(),
+                keyboardOff = fake?.keyboardOff ?: setupTick.let { keyboardOff() },
                 onFixKeyboard = { runCatching { startActivity(Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS)) } },
                 onPay = { push(Screen.Scan(FlowKind.Payment)) },
                 onSend = { push(Screen.Number(FlowKind.SendMoney, "", null)) },
                 onCashOut = { push(Screen.Number(FlowKind.CashOut, "", null)) },
                 onBalance = { start(Flows.balance()) },
                 onSetup = { push(Screen.Setup(then = null)) },
-                scanLearned = prefs.scanLearned,
-            )
+                design = prefs.homeDesign,
+                onDesign = { prefs.homeDesign = it },
+              )
+            }
             is Screen.Scan -> ScanScreen(
                 onRead = { read ->
                     pop()
@@ -494,5 +511,27 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val ACTION_SCAN = "com.chalaiden.app.SCAN"
+    }
+}
+
+/**
+ * Debug builds only: lays [content] out as if the phone's text size were [fontScale] and the window
+ * [width] dp wide, centred in the real one. Both null: [content] as it is.
+ */
+@androidx.compose.runtime.Composable
+private fun DebugFrame(fontScale: Float?, width: Int?, content: @androidx.compose.runtime.Composable () -> Unit) {
+    if (fontScale == null && width == null) return content()
+    val d = androidx.compose.ui.platform.LocalDensity.current
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, fontScale ?: d.fontScale),
+    ) {
+        androidx.compose.foundation.layout.Box(
+            androidx.compose.ui.Modifier.fillMaxSize(),
+            contentAlignment = androidx.compose.ui.Alignment.TopCenter,
+        ) {
+            androidx.compose.foundation.layout.Box(
+                width?.let { androidx.compose.ui.Modifier.width(it.dp) } ?: androidx.compose.ui.Modifier.fillMaxSize(),
+            ) { content() }
+        }
     }
 }
