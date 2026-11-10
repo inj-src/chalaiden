@@ -87,7 +87,10 @@ private fun geist(weight: Int) = Font(
     variationSettings = FontVariation.Settings(FontVariation.weight(weight)),
 )
 
-private val Geist = FontFamily(geist(400), geist(500), geist(600), geist(700))
+private val Geist = FontFamily(geist(400), geist(500), geist(600), geist(700), geist(800))
+
+/** Anek Bangla, condensed ExtraBold (a static instance): the `*247#` on Guided mode's badge. */
+val Anek = FontFamily(Font(R.font.anek_condensed_extrabold, FontWeight.ExtraBold))
 
 object Type {
     val digit = TextStyle(fontFamily = Geist, fontWeight = FontWeight.Medium, fontSize = 30.sp, fontFeatureSettings = "tnum")

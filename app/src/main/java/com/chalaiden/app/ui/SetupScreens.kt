@@ -1,5 +1,9 @@
 package com.chalaiden.app.ui
 
+import com.chalaiden.app.ui.components.FixedTextScale
+import com.chalaiden.app.ui.theme.Anek
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
@@ -365,11 +369,7 @@ private fun WayStep(
     StepHeading("How should Chalaiden answer bKash?", "Any one of these is enough. You can switch later.")
     Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         WayRow(
-            icon = {
-                Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(tokens.raised), contentAlignment = Alignment.Center) {
-                    Icon(AppIcons.Dialpad, null, tint = tokens.ink, modifier = Modifier.size(22.dp))
-                }
-            },
+            icon = { GuidedBadge() },
             title = "Guided mode",
             tag = "Any phone",
             badge = badge(Method.Guided, inUse, works = true),
@@ -513,4 +513,23 @@ private fun shizukuAction(status: ShizukuAccess.Status) = when (status) {
     ShizukuAccess.Status.NeedsPermission -> "Allow in Shizuku"
     ShizukuAccess.Status.Denied -> "Open Shizuku"
     ShizukuAccess.Status.Ready -> "Try again"
+}
+
+/**
+ * Guided mode's mark: the code it walks, set like a badge. Shizuku and Root show their apps' own marks;
+ * guided mode has no app behind it, only `*247#`.
+ */
+@Composable
+private fun GuidedBadge() = FixedTextScale {
+    Box(
+        Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(tokens.accent),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "*247#",
+            style = TextStyle(fontFamily = Anek, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, letterSpacing = (-0.2).sp),
+            color = tokens.onAccent,
+            maxLines = 1,
+        )
+    }
 }
