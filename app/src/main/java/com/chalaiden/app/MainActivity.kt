@@ -34,6 +34,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -77,7 +84,7 @@ private sealed interface Screen {
     data class Number(val kind: FlowKind, val number: String, val crop: Bitmap?, val groups: List<Int>? = null) : Screen
     data class Amount(val kind: FlowKind, val number: String, val groups: List<Int>? = null) : Screen
     data object Running : Screen
-    data class Result(val flow: UssdFlow, val outcome: Outcome) : Screen
+    data class Result(val flow: UssdFlow, val outcome: Outcome, val wave: Boolean = false) : Screen
     data class Setup(val then: UssdFlow?) : Screen
     /** Step-by-step set-up for one way of answering bKash, opened from Setup. */
     data class MethodGuide(val method: Method) : Screen
@@ -89,6 +96,12 @@ class MainActivity : ComponentActivity() {
 
     /** Bumped when setup changes outside Compose (root or Shizuku fixes), so screens re-check readiness. */
     private var setupTick by mutableIntStateOf(0)
+
+    /** The screen as it last looked while paying, recorded each frame; what the success wave carries away. */
+    private var screenLayer: GraphicsLayer? = null
+
+    /** That picture, taken as a payment went through, until the wave has finished with it. */
+    private var waveFrom by mutableStateOf<ImageBitmap?>(null)
 
     /** Cached result of the last root check; readiness reads this instead of spawning `su` in composition. */
     @Volatile private var rootOk = false
@@ -267,7 +280,9 @@ class MainActivity : ComponentActivity() {
                 }
                 is DebugDemo.Target.Result -> {
                     UssdSession.debugShow(null) // or the run cover stays up over the result
-                    stack.clear(); stack += listOf(Screen.Home, Screen.Result(target.flow, target.outcome))
+                    // From a run demo on screen, as a real payment arrives: with the wave.
+                    if (stack.lastOrNull() == Screen.Running) lifecycleScope.launch { showResult(target.flow, target.outcome) }
+                    else { stack.clear(); stack += listOf(Screen.Home, Screen.Result(target.flow, target.outcome)) }
                 }
                 is DebugDemo.Target.Receipt -> com.chalaiden.app.ui.writeReceipt(this, target.flow, target.outcome, java.util.Date())
                 null -> Unit
@@ -280,6 +295,16 @@ class MainActivity : ComponentActivity() {
             stack.clear()
             stack += listOf(Screen.Home, Screen.Scan(FlowKind.Payment))
         }
+    }
+
+    /**
+     * Replaces the run screen with its result. Money that moved gets the wave: the run screen as it looked
+     * is pictured first, for the wave to carry into the result.
+     */
+    private suspend fun showResult(flow: UssdFlow, outcome: Outcome) {
+        val wave = outcome is Outcome.Success && flow.kind != FlowKind.Balance
+        if (wave) waveFrom = screenLayer?.let { runCatching { it.toImageBitmap() }.getOrNull() }
+        replaceTop(Screen.Result(flow, outcome, wave))
     }
 
     private fun push(s: Screen) { forward = true; stack += s }
@@ -374,7 +399,7 @@ class MainActivity : ComponentActivity() {
             val state = s.state
             if (state is RunState.Finished && stack.lastOrNull() == Screen.Running) {
                 PinEntry.reset() // digits typed before a failure while walking the menu
-                replaceTop(Screen.Result(s.flow, state.outcome))
+                showResult(s.flow, state.outcome)
                 if (state.outcome is Outcome.Success && s.flow.kind == FlowKind.Payment) prefs.scanLearned = true
                 UssdSession.clear()
             }
@@ -397,10 +422,16 @@ class MainActivity : ComponentActivity() {
             known.retainAll(keys.toSet())
             known += keys
         }
+        val layer = rememberGraphicsLayer().also { screenLayer = it }
         AnimatedContent(
             targetState = stack.last(),
             transitionSpec = { screenTransition(initialState, targetState, forward) },
-            modifier = Modifier.fillMaxSize().background(tokens.bg),
+            modifier = Modifier.fillMaxSize().background(tokens.bg).drawWithContent {
+                // Recorded only while paying: the one screen the success wave needs a picture of.
+                if (stack.lastOrNull() != Screen.Running) return@drawWithContent drawContent()
+                layer.record { this@drawWithContent.drawContent() }
+                drawLayer(layer)
+            },
             label = "screens",
         ) { screen -> saved.SaveableStateProvider(screen.toString()) { ScreenContent(screen) } }
     }
@@ -468,6 +499,9 @@ class MainActivity : ComponentActivity() {
                 onRetry = { pop(); start(screen.flow) },
                 onCheckBalance = { home(); start(Flows.balance()) },
                 onDone = ::home,
+                wave = screen.wave,
+                waveFrom = waveFrom,
+                onWaveDone = { waveFrom = null },
             )
             is Screen.Setup -> SetupScreen(
                 prefs = prefs,
@@ -500,6 +534,8 @@ class MainActivity : ComponentActivity() {
      */
     private fun AnimatedContentTransitionScope<Screen>.screenTransition(from: Screen, to: Screen, forward: Boolean): ContentTransform {
         val ease = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+        // The wave is the whole transition: it starts from a picture of the screen it replaces.
+        if (to is Screen.Result && to.wave) return EnterTransition.None togetherWith ExitTransition.None
         if (to is Screen.Result) {
             return (fadeIn(tween(220, delayMillis = 40)) + scaleIn(tween(300, easing = ease), initialScale = 0.96f))
                 .togetherWith(fadeOut(tween(120)))

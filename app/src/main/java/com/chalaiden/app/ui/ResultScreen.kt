@@ -41,6 +41,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.graphics.ImageBitmap
+import com.chalaiden.app.ui.wave.DistortionWave
+import com.chalaiden.app.ui.wave.WaveSource
+import com.chalaiden.app.ui.wave.waveSource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -78,7 +83,38 @@ import java.util.Locale
 private const val RETRY_COOLDOWN_SECONDS = 30
 
 @Composable
-fun ResultScreen(flow: UssdFlow, outcome: Outcome, onRetry: () -> Unit, onCheckBalance: () -> Unit, onDone: () -> Unit) {
+fun ResultScreen(
+    flow: UssdFlow,
+    outcome: Outcome,
+    onRetry: () -> Unit,
+    onCheckBalance: () -> Unit,
+    onDone: () -> Unit,
+    wave: Boolean = false,
+    waveFrom: ImageBitmap? = null,
+    onWaveDone: () -> Unit = {},
+) {
+    // Taken once: the wave plays as the screen arrives, and never again if it recomposes.
+    val waving = remember { wave }
+    val from = remember { waveFrom }
+    val source = remember { WaveSource() }
+    // The badge waits for the wave to uncover it, so its spring and the haptic land as it is seen.
+    var badgeIn by remember { mutableStateOf(!waving) }
+    if (!waving) return ResultBody(flow, outcome, badgeIn = true, source, onRetry, onCheckBalance, onDone)
+    DistortionWave(from, source, Modifier.fillMaxSize(), onReveal = { badgeIn = true }, onFinish = onWaveDone) {
+        ResultBody(flow, outcome, badgeIn, source, onRetry, onCheckBalance, onDone)
+    }
+}
+
+@Composable
+private fun ResultBody(
+    flow: UssdFlow,
+    outcome: Outcome,
+    badgeIn: Boolean,
+    source: WaveSource,
+    onRetry: () -> Unit,
+    onCheckBalance: () -> Unit,
+    onDone: () -> Unit,
+) {
     val t = tokens
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -102,7 +138,8 @@ fun ResultScreen(flow: UssdFlow, outcome: Outcome, onRetry: () -> Unit, onCheckB
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Box(Modifier.fillMaxWidth().heightIn(min = room), contentAlignment = BiasAlignment(-1f, -0.3f)) {
         Column(Modifier.fillMaxWidth().padding(vertical = 16.dp)) {
-            OutcomeBadge(flow, outcome) { haptics.performHapticFeedback(HapticFeedbackType.LongPress) }
+            if (badgeIn) OutcomeBadge(flow, outcome) { haptics.performHapticFeedback(HapticFeedbackType.LongPress) }
+            else Spacer(Modifier.size(64.dp))
             Spacer(Modifier.height(20.dp))
             Text(title, style = Type.display, color = fg)
 
@@ -169,10 +206,12 @@ fun ResultScreen(flow: UssdFlow, outcome: Outcome, onRetry: () -> Unit, onCheckB
         // The bottom is the same on every result: the main button, then a 48dp slot for a second action
         // (left empty when there is none), so the thumb finds them where it found "Hold to pay". Retry
         // keeps its place throughout: it fills up while bKash would still refuse it, then turns solid.
-        when {
-            outcome is Outcome.Unknown -> PrimaryButton("Check balance", onClick = onCheckBalance)
-            canRetry -> RetryButton(cooldown, RETRY_COOLDOWN_SECONDS, onRetry)
-            else -> PrimaryButton("Done", onClick = onDone)
+        Box(Modifier.fillMaxWidth().waveSource(source)) {
+            when {
+                outcome is Outcome.Unknown -> PrimaryButton("Check balance", onClick = onCheckBalance)
+                canRetry -> RetryButton(cooldown, RETRY_COOLDOWN_SECONDS, onRetry)
+                else -> PrimaryButton("Done", onClick = onDone)
+            }
         }
         Box(Modifier.fillMaxWidth().padding(top = 4.dp).height(48.dp), contentAlignment = Alignment.Center) {
             when {
