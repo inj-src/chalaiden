@@ -25,6 +25,19 @@ data class PhoneQuirks(
      */
     val frontGapMillis: Long get() = if (closesDialogOnSend) SLOWEST_REPLY_MILLIS else 2_500L
 
+    /**
+     * How long the automatic driver may see no USSD dialog before the session counts as lost. Where a
+     * "Running USSD code…" dialog stays up, a few seconds without one means it really went. Where Send
+     * closes the dialog, the gap lasts until bKash answers, so it waits as long as it would for that
+     * answer: bKash's slowest reply, and after the PIN the full wait for its receipt ([afterPinMillis]),
+     * since calling a payment unknown while bKash is still working is worse than waiting.
+     */
+    fun lostAfterMillis(pinSent: Boolean, afterPinMillis: Long): Long = when {
+        !closesDialogOnSend -> 6_000L
+        pinSent -> afterPinMillis
+        else -> SLOWEST_REPLY_MILLIS
+    }
+
     companion object {
         /** Longer than bKash ever takes to send its next prompt after a reply (seconds, on a slow network). */
         const val SLOWEST_REPLY_MILLIS = 12_000L

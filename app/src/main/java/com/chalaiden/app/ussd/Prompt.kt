@@ -2,10 +2,23 @@ package com.chalaiden.app.ussd
 
 /** Text helpers for USSD dialogs. bKash prepends changing promo lines, so the last line is the real prompt. */
 object Prompt {
-    // "4 Payment", "0. Main Menu", "2 - No"
-    private val menuLine = Regex("""^(\d{1,2})\s*[.):-]?\s+(.+)$""")
+    // "4 Payment", "0. Main Menu", "2 - No", and "9.My bKash" with no space (Banglalink, vivo V2445A, 2026-11-12)
+    private val menuLine = Regex("""^(\d{1,2})(?:\s*[.):-]\s*|\s+)(\S.*)$""")
     private val keyValue = Regex("""^([A-Za-z][A-Za-z ]{1,24}):\s*(.+)$""")
     private val trxId = Regex("""TrxID[:\s]*([A-Z0-9]{6,})""", RegexOption.IGNORE_CASE)
+
+    /**
+     * The phone app's wait between exchanges, not a message from bKash. Stock Android and OxygenOS say
+     * "Running USSD code…"; vivo says "USSD code running…" (V2445A, Android 15, OriginOS 5, 2026-11-12).
+     */
+    fun isProgress(text: String): Boolean =
+        text.contains("Running USSD", ignoreCase = true) || text.contains("USSD code running", ignoreCase = true)
+
+    /**
+     * Where the phone app puts bKash's text, in order of trust. vivo's dialog puts it in the title
+     * (`alertTitle`), so that comes after the stock ids: elsewhere a title is not the message.
+     */
+    val MESSAGE_IDS = listOf("com.android.phone:id/message_field", "android:id/message", "com.android.phone:id/alertTitle")
 
     fun lines(text: String): List<String> = text.lines().map { it.trim() }.filter { it.isNotEmpty() }
 

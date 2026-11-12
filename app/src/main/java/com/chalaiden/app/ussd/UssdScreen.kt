@@ -206,9 +206,8 @@ internal class DumpScreen(private val sh: RootShell) : UssdScreen {
 
     private fun parse(xml: String, hasInput: Boolean): Dialog? {
         val nodes = nodes(xml)
-        if (nodes.any { attr(it, "text")?.contains("Running USSD", ignoreCase = true) == true }) return Dialog.Progress
-        val message = nodes.firstOrNull { attr(it, "resource-id")?.endsWith(":id/message_field") == true || attr(it, "resource-id") == "android:id/message" }
-            ?.let { attr(it, "text") }
+        if (nodes.any { attr(it, "text")?.let(Prompt::isProgress) == true }) return Dialog.Progress
+        val message = Prompt.MESSAGE_IDS.firstNotNullOfOrNull { id -> nodes.firstOrNull { attr(it, "resource-id") == id }?.let { attr(it, "text") }?.takeIf { it.isNotBlank() } }
             ?: nodes.filter { attr(it, "class")?.contains("Button") != true && attr(it, "class") != "android.widget.EditText" }
                 .mapNotNull { attr(it, "text") }.filter { it.isNotBlank() }.maxByOrNull { it.length }
         val text = unescape(message.orEmpty()).trim()

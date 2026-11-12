@@ -3,6 +3,7 @@ package com.chalaiden.app.ussd
 import android.content.Context
 import android.util.Log
 import com.chalaiden.app.BuildConfig
+import com.chalaiden.app.vendor.PhoneQuirks
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,8 +24,11 @@ import kotlinx.coroutines.launch
 object UssdDriver {
     private const val TAG = "ChalaidenUssd"
 
-    /** The phone dialog may vanish between exchanges for a moment; this long without it means it's gone. */
-    private const val LOST_AFTER_MILLIS = 6_000L
+    /** The phone dialog may vanish between exchanges; this long without it means it's gone (see [PhoneQuirks.lostAfterMillis]). */
+    private fun lostAfterMillis() = PhoneQuirks.current.lostAfterMillis(
+        pinSent = UssdSession.current.value?.state == RunState.Confirming,
+        afterPinMillis = UssdSession.CONFIRM_STALL_MILLIS,
+    )
 
     /**
      * After a session ends, this long with no dialog (counted from the dial or the last dialog) means
@@ -170,7 +174,7 @@ object UssdDriver {
                         lastTraced = dialog
                         if (action != Action.None) execute(action, look, gen)
                     }
-                } else if (UssdSession.isActive && now - lastSeenAt > LOST_AFTER_MILLIS) {
+                } else if (UssdSession.isActive && now - lastSeenAt > lostAfterMillis()) {
                     trace("lost")
                     UssdSession.onSessionLost()
                 }

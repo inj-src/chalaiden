@@ -27,6 +27,18 @@ class UssdEngineTest {
         assertEquals("12345", (e.submitPin("12345") as Action.Reply).text)
     }
 
+    /** Banglalink on a vivo V2445A, 2026-11-12: no space after the number. */
+    private val tightMenu = "bKash\n1.Send Money\n2.Send Money to Non-bKash User\n3.Mobile Recharge\n4.Payment\n" +
+        "5.Cash Out\n6.Pay Bill\n7.Microfinance\n8.Download bKash App\n9.My bKash\n10.Reset PIN"
+
+    @Test fun menuWithoutSpacesAfterTheNumberStillWalks() {
+        val e = UssdEngine(Flows.balance())
+        assertEquals(Action.Reply("9"), e.onDialog(prompt(tightMenu)))
+        assertEquals("10", Prompt.optionFor(tightMenu, "Reset PIN"))
+        assertEquals("2", Prompt.optionFor("Do you want to continue?\n1 - Yes\n2 - No", "No"))
+        assertEquals("0", Prompt.optionFor("0. Main Menu", "Main Menu"))
+    }
+
     private fun walkPayment(e: UssdEngine) {
         e.onDialog(prompt(menu))
         e.onDialog(prompt("Enter Merchant bKash Account No:"))

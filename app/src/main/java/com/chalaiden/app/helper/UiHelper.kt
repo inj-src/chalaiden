@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.os.HandlerThread
 import android.os.Looper
 import android.view.accessibility.AccessibilityNodeInfo
+import com.chalaiden.app.ussd.Prompt
 import org.json.JSONObject
 import kotlin.system.exitProcess
 
@@ -28,7 +29,6 @@ import kotlin.system.exitProcess
  */
 object UiHelper {
     private const val PHONE = "com.android.phone"
-    private const val MESSAGE_ID = "com.android.phone:id/message_field"
 
     @JvmStatic
     fun main(args: Array<String>) {
@@ -93,7 +93,7 @@ object UiHelper {
         val root = phoneRoot(ui) ?: return JSONObject().put("win", false)
         val nodes = flatten(root)
         val edit = edit(nodes)
-        val progress = nodes.any { it.text?.contains("Running USSD", ignoreCase = true) == true }
+        val progress = nodes.any { n -> n.text?.let { Prompt.isProgress(it.toString()) } == true }
         return JSONObject()
             .put("win", true)
             .put("progress", progress)
@@ -104,7 +104,7 @@ object UiHelper {
     }
 
     private fun messageOf(nodes: List<AccessibilityNodeInfo>): String =
-        (nodes.firstOrNull { it.viewIdResourceName == MESSAGE_ID || it.viewIdResourceName == "android:id/message" }?.text
+        (Prompt.MESSAGE_IDS.firstNotNullOfOrNull { id -> nodes.firstOrNull { it.viewIdResourceName == id && !it.text.isNullOrBlank() }?.text }
             ?: nodes.filter { !it.isEditable && it.className?.contains("Button") != true }
                 .mapNotNull { it.text }.maxByOrNull { it.length })
             ?.toString().orEmpty()
@@ -135,7 +135,11 @@ object UiHelper {
 
     private fun press(root: AccessibilityNodeInfo?, id: String): Boolean {
         root ?: return false
-        val button = root.findAccessibilityNodeInfosByViewId("android:id/$id").firstOrNull { it.isClickable }
+        val full = "android:id/$id"
+        // vivo's OriginOS dialog answers the id lookup with nothing (V2445A, Android 15, 2026-11-12),
+        // though its buttons carry the id; walking the tree finds them.
+        val button = root.findAccessibilityNodeInfosByViewId(full).firstOrNull { it.isClickable }
+            ?: flatten(root).firstOrNull { it.viewIdResourceName == full && it.isClickable }
             ?: return false
         return button.performAction(AccessibilityNodeInfo.ACTION_CLICK)
     }
