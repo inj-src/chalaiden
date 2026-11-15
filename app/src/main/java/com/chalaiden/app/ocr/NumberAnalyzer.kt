@@ -166,14 +166,17 @@ class NumberAnalyzer(
             .getOrNull()?.let(NumberFinder::best)
         val seen = found?.let { (number, span) -> Sighting(frame, number, span, now) }
         if (seen != null) last = seen
-        // Held in view long enough: taken as if pressed, from this frame.
-        if (steady.feed(seen?.number, now)) wanted = true
+        // A number held in view long enough is taken as if pressed: the digits the frames agreed on,
+        // with this frame's strip for the user to check them against.
+        val agreed = steady.feed(seen?.number, now)
         onLive(seen?.let { LiveNumber(it.number, it.span.groups ?: NumberLayout.fallback, it.span, frame.width, frame.height) })
+        if (agreed != null && seen != null) return finish(read(seen, agreed))
         // Pressed with no number in view: hand over the photo so the user can type what they see.
         if (wanted) finish(seen?.let(::read) ?: NumberRead(null, frame))
     }
 
-    private fun read(s: Sighting) = NumberRead(s.number, NumberFinder.crop(s.frame, s.span), s.span.groups ?: NumberLayout.fallback)
+    private fun read(s: Sighting, number: String = s.number) =
+        NumberRead(number, NumberFinder.crop(s.frame, s.span), s.span.groups ?: NumberLayout.fallback)
 
     private fun finish(read: NumberRead) {
         done = true

@@ -78,7 +78,6 @@ import androidx.core.content.ContextCompat
 import com.chalaiden.app.ocr.NumberAnalyzer
 import com.chalaiden.app.ocr.NumberFinder
 import com.chalaiden.app.ocr.NumberRead
-import com.chalaiden.app.ui.components.NumberRail
 import com.chalaiden.app.ui.components.AppIcons
 import com.chalaiden.app.ui.components.Chip
 import com.chalaiden.app.ui.components.PrimaryButton
@@ -205,10 +204,15 @@ private fun Camera(onRead: (NumberRead) -> Unit, onTypeInstead: () -> Unit, onGa
                 .onGloballyPositioned { guide = it.boundsInRoot() },
         )
         Spacer(Modifier.height(16.dp))
+        // The digits being read are not shown: they change frame to frame as OCR settles, and watching
+        // them flicker makes the scan look unsure. The brackets show it has found the number; the user
+        // checks the digits once, against the card, on the next screen.
         Box(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 24.dp), contentAlignment = Alignment.Center) {
-            val l = live
-            if (l != null) NumberRail(l.number, groups = l.groups, compact = true)
-            else Text("Looking for an 11-digit number…", style = Type.body, color = Color.White.copy(alpha = 0.8f))
+            Text(
+                if (live != null) "Hold still" else "Looking for an 11-digit number…",
+                style = Type.body,
+                color = Color.White.copy(alpha = 0.8f),
+            )
         }
         Spacer(Modifier.weight(1f))
 
