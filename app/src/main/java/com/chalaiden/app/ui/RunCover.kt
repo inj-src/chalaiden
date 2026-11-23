@@ -5,7 +5,18 @@ import android.graphics.PixelFormat
 import android.os.Build
 import android.provider.Settings
 import android.view.WindowManager
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.unit.dp
+import com.chalaiden.app.ui.theme.tokens
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -87,13 +98,18 @@ object RunCover {
         removal = null
         shown.value = true
         if (view != null) return
-        // With the Accessibility method on, the cover is the service's own accessibility overlay: it
-        // needs no "display over other apps", and sits above the keyboard too. Otherwise, a plain overlay.
-        val service = ChalaidenAccessibility.instance
+        // A plain overlay when it's allowed: the status bar stays on top of it, as it does over the
+        // activity, so the PIN screen doesn't move when the cover takes over. Without that permission,
+        // the Accessibility method's service hosts it as an accessibility overlay instead.
+        val service = ChalaidenAccessibility.instance.takeUnless { Settings.canDrawOverlays(context) }
         if (service == null && !Settings.canDrawOverlays(context)) return
         val windowContext: Context = service ?: context
         val type = if (service != null) WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
         else WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        // An accessibility overlay sits above the system bars and is told of no insets, so RunOverlay's
+        // own bar padding comes out as zero and the screen jumped up by the status bar's height
+        // (OnePlus CPH2767, Android 16, 2026-11-23). It is padded here by the bars' real sizes instead.
+        val bars = service?.let(::barPadding)
         val o = CoverOwner().also { it.start() }
         val v = ComposeView(windowContext).apply {
             setViewTreeLifecycleOwner(o)
@@ -103,7 +119,14 @@ object RunCover {
                     val visible = remember { MutableTransitionState(false) }
                     visible.targetState = shown.value
                     AnimatedVisibility(visible, enter = fadeIn(tween(FADE_MILLIS)), exit = fadeOut(tween(FADE_MILLIS))) {
-                        RunOverlay()
+                        if (bars == null) {
+                            RunOverlay()
+                        } else {
+                            // Consumed, so a phone that does report insets here doesn't get them twice.
+                            Box(Modifier.fillMaxSize().background(tokens.bg).padding(bars).consumeWindowInsets(WindowInsets.systemBars)) {
+                                RunOverlay()
+                            }
+                        }
                     }
                 }
             }
@@ -149,6 +172,24 @@ object RunCover {
     }
 
     private const val SETTLE_MILLIS = 380L
+
+    /** The status and navigation bars' sizes, whether or not they are showing: what the activity pads for. */
+    private fun barPadding(context: Context): PaddingValues {
+        val density = context.resources.displayMetrics.density
+        fun dp(px: Int) = (px / density).dp
+        val fromMetrics = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            runCatching {
+                context.getSystemService(WindowManager::class.java).currentWindowMetrics.windowInsets
+                    .getInsetsIgnoringVisibility(android.view.WindowInsets.Type.systemBars())
+            }.getOrNull()
+        } else null
+        if (fromMetrics != null) {
+            return PaddingValues(start = dp(fromMetrics.left), top = dp(fromMetrics.top), end = dp(fromMetrics.right), bottom = dp(fromMetrics.bottom))
+        }
+        fun dimen(name: String) = context.resources.getIdentifier(name, "dimen", "android")
+            .takeIf { it != 0 }?.let(context.resources::getDimensionPixelSize) ?: 0
+        return PaddingValues(top = dp(dimen("status_bar_height")), bottom = dp(dimen("navigation_bar_height")))
+    }
 
     /** ComposeView needs a lifecycle; an overlay window has none of its own. */
     private class CoverOwner : LifecycleOwner, SavedStateRegistryOwner {
