@@ -421,6 +421,7 @@ after logging in or on other phones. Record what you see; don't log in to anyone
 | OnePlus CPH2767 | 16 / OxygenOS | 2026-11-23 | ✓ | ✓ walked to PIN, Cancel ok | ✓ | ✓ | Maintainer's phone |
 | Redmi K20 Pro (raphael) | 11 / MIUI 12.5 China | 2026-11-23 | not tried | ✓ walked to PIN, Cancel ok (after the SIM and chooser fixes) | not installed (helper works from adb) | — | Two Grameenphone SIMs, SIM 1 chosen; ZoiPer installed; build is `test-keys` |
 | Samsung Galaxy A13 (SM-A135F) | 14 / One UI 6.1 | 2026-11-23 | not tried | ✓ walked to PIN, Cancel ok | not installed (release helper works from adb) | — | SIM 2 (`sim=2`); no overlay permission, so the cover was the accessibility overlay |
+| Redmi 10C (fog, 220333QAG) | 13 / MIUI 14 Global | 2026-11-23 | not tried | ✓ walked to PIN, Cancel ok | not installed | — | SIM 1 Robi has no bKash account (bKash's "download bKash App" notice came through as a failure, nothing sent); SIM 2 Banglalink walked. MIUI 14 lists both SIMs normally. No overlay permission; the status bar stayed visible over the accessibility cover |
 | REDMI Turbo 4 Pro (25053RT47C) | 17 / HyperOS 4 | 2026-11-23 | not tried | ✓ walked to PIN, Cancel ok (after the `ussd_message` fix) | not installed (helper works from adb) | — | SIM 2 (`sim=1`); no overlay permission, so the cover was the accessibility overlay |
 | vivo V2445A | 15 / OriginOS 5 | 2026-11-12 | ✓ | not yet | ✓ walked to PIN, Cancel ok | — | SIM 2 Banglalink |
 
