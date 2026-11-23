@@ -2,8 +2,10 @@ package com.chalaiden.app.ussd
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -31,7 +33,64 @@ object Dialer {
             val network = if (Build.VERSION.SDK_INT >= 29) "${it.mccString.orEmpty()}${it.mncString.orEmpty()}"
             else @Suppress("DEPRECATION") "%03d%02d".format(it.mcc, it.mnc)
             Sim(it.subscriptionId, it.simSlotIndex, it.carrierName?.toString().orEmpty().ifBlank { "SIM ${it.simSlotIndex + 1}" }, network)
-        }.sortedBy { it.slot }
+        }.sortedBy { it.slot }.ifEmpty { simsBySlot(context, sm) }
+    }
+
+    /**
+     * SIMs read slot by slot, through calls that need no permission. Some phones hand an app an empty
+     * SIM list, and refuse the calls behind it, with phone access allowed in every list Android and the
+     * maker keep: REDMI K20 Pro, MIUI 12.5 China ROM, Android 11, 2026-11-23. Both slots were ready.
+     */
+    private fun simsBySlot(context: Context, sm: SubscriptionManager): List<Sim> {
+        if (Build.VERSION.SDK_INT < 29) return emptyList()
+        val tm = context.getSystemService(TelephonyManager::class.java)
+        @Suppress("DEPRECATION") val slots = tm.phoneCount
+        return (0 until slots).mapNotNull { slot ->
+            runCatching {
+                if (tm.getSimState(slot) != TelephonyManager.SIM_STATE_READY) return@runCatching null
+                val id = if (Build.VERSION.SDK_INT >= 34) SubscriptionManager.getSubscriptionId(slot)
+                else @Suppress("DEPRECATION") sm.getSubscriptionIds(slot)?.firstOrNull()
+                if (id == null || id < 0) return@runCatching null
+                val sim = tm.createForSubscriptionId(id)
+                Sim(id, slot, sim.simOperatorName.orEmpty().ifBlank { "SIM ${slot + 1}" }, sim.simOperator.orEmpty())
+            }.getOrNull()
+        }
+    }
+
+    /** Debug: every way Android can tell us about SIMs, one line each, so a phone that hides them shows where. */
+    @SuppressLint("MissingPermission")
+    fun probe(context: Context): String = buildString {
+        fun line(name: String, f: () -> Any?) = appendLine("$name = ${runCatching(f).getOrElse { "threw ${it.javaClass.simpleName}: ${it.message}" }}")
+        val sm = context.getSystemService(SubscriptionManager::class.java)
+        val tm = context.getSystemService(TelephonyManager::class.java)
+        val telecom = context.getSystemService(TelecomManager::class.java)
+        line("permissions") { permissions.associateWith { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED } }
+        val ops = context.getSystemService(android.app.AppOpsManager::class.java)
+        line("checkOp read_phone_state") { ops.unsafeCheckOpNoThrow("android:read_phone_state", android.os.Process.myUid(), context.packageName) }
+        line("noteOp read_phone_state") { ops.noteOpNoThrow("android:read_phone_state", android.os.Process.myUid(), context.packageName, null, "probe") }
+        line("PermissionChecker") { androidx.core.content.PermissionChecker.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) }
+        line("opPackageName") { context.opPackageName + " / " + context.attributionTag }
+        line("activeSubscriptionInfoList") { sm.activeSubscriptionInfoList?.map { "id=${it.subscriptionId} slot=${it.simSlotIndex} ${it.carrierName}" } }
+        line("activeSubscriptionInfoCount") { sm.activeSubscriptionInfoCount }
+        line("activeSubscriptionInfoCountMax") { sm.activeSubscriptionInfoCountMax }
+        line("slot0") { sm.getActiveSubscriptionInfoForSimSlotIndex(0)?.subscriptionId }
+        line("slot1") { sm.getActiveSubscriptionInfoForSimSlotIndex(1)?.subscriptionId }
+        line("defaultSubscriptionId") { SubscriptionManager.getDefaultSubscriptionId() }
+        line("defaultVoiceSubscriptionId") { SubscriptionManager.getDefaultVoiceSubscriptionId() }
+        line("phoneCount") { @Suppress("DEPRECATION") tm.phoneCount }
+        line("simState0") { if (Build.VERSION.SDK_INT >= 26) tm.getSimState(0) else null }
+        line("simState1") { if (Build.VERSION.SDK_INT >= 26) tm.getSimState(1) else null }
+        line("simOperatorName") { tm.simOperatorName }
+        line("callCapablePhoneAccounts") { telecom.callCapablePhoneAccounts.map { it.id.takeLast(4) } }
+        telecom.callCapablePhoneAccounts.forEachIndexed { i, h ->
+            line("account$i.subId") { if (Build.VERSION.SDK_INT >= 30) tm.getSubscriptionId(h) else null }
+            line("account$i.slot") { if (Build.VERSION.SDK_INT >= 30) SubscriptionManager.getSlotIndex(tm.getSubscriptionId(h)) else null }
+            line("account$i.operator") { if (Build.VERSION.SDK_INT >= 30) tm.createForSubscriptionId(tm.getSubscriptionId(h)).let { "${it.simOperatorName} ${it.simOperator}" } else null }
+            line("account$i.label") { telecom.getPhoneAccount(h)?.label }
+            line("account$i.extras") { telecom.getPhoneAccount(h)?.extras?.let { e -> e.keySet().associateWith { e.get(it)?.toString()?.take(24) } } }
+            line("account$i.component") { h.componentName.className.substringAfterLast('.') }
+        }
+        for (slot in 0 until 2) line("subIdsForSlot$slot") { SubscriptionManager::class.java.getMethod("getSubscriptionIds", Int::class.javaPrimitiveType).invoke(sm, slot).let { (it as? IntArray)?.toList() } }
     }
 
     /**
@@ -42,7 +101,21 @@ object Dialer {
         Intent(Intent.ACTION_CALL, Uri.fromParts("tel", Flows.CODE, null)).apply {
             accountFor(context, context.getSystemService(TelecomManager::class.java), subscriptionId)
                 ?.let { putExtra(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, it) }
+            systemCaller(context, this)?.let { component = it }
         }
+
+    /**
+     * The phone's own call handler, when another app also takes calls. A VoIP app (ZoiPer on a REDMI K20
+     * Pro, 2026-11-23) answers ACTION_CALL too, and Android then asks "Complete action using" behind
+     * Chalaiden's cover, so bKash's menu never opens. With one handler nothing changes.
+     */
+    private fun systemCaller(context: Context, intent: Intent): ComponentName? = runCatching {
+        val handlers = context.packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        if (handlers.size < 2) return@runCatching null
+        handlers.map { it.activityInfo }
+            .filter { it.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0 }
+            .singleOrNull()?.let { ComponentName(it.packageName, it.name) }
+    }.getOrNull()
 
     @SuppressLint("MissingPermission")
     private fun accountFor(context: Context, telecom: TelecomManager, subscriptionId: Int?): PhoneAccountHandle? {
@@ -50,12 +123,30 @@ object Dialer {
         val accounts = telecom.callCapablePhoneAccounts
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val tm = context.getSystemService(TelephonyManager::class.java)
-            return accounts.firstOrNull { tm.getSubscriptionId(it) == subscriptionId }
+            return runCatching { accounts.firstOrNull { tm.getSubscriptionId(it) == subscriptionId } }
+                .getOrElse { accountBySlot(telecom, accounts, subscriptionId) }
         }
         // Older releases use the subscription id or ICCID as the account id.
         val iccId = context.getSystemService(SubscriptionManager::class.java)
             .getActiveSubscriptionInfo(subscriptionId)?.iccId
         return accounts.firstOrNull { it.id == subscriptionId.toString() || (iccId != null && it.id.startsWith(iccId)) }
+    }
+
+    /**
+     * For phones that refuse to say which account is which SIM ([simsBySlot]): Android's own SIM
+     * accounts carry their slot as [SORT_ORDER]. Only an exact, single match counts;
+     * otherwise null, and the phone asks for the SIM itself rather than Chalaiden guessing.
+     */
+    /** `PhoneAccount.EXTRA_SORT_ORDER`, hidden from the SDK; telephony sets it to the SIM's slot. */
+    private const val SORT_ORDER = "android.telecom.extra.SORT_ORDER"
+
+    private fun accountBySlot(telecom: TelecomManager, accounts: List<PhoneAccountHandle>, subscriptionId: Int): PhoneAccountHandle? {
+        if (Build.VERSION.SDK_INT < 29) return null
+        val slot = SubscriptionManager.getSlotIndex(subscriptionId).takeIf { it >= 0 } ?: return null
+        return accounts.filter {
+            runCatching { telecom.getPhoneAccount(it)?.extras?.getString(SORT_ORDER) == slot.toString() }
+                .getOrDefault(false)
+        }.singleOrNull()
     }
 }
 

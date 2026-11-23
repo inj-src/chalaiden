@@ -318,6 +318,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        // Debug builds only: what each SIM API tells Chalaiden, written to files/sims.log. The REDMI K20
+        // Pro (MIUI 12.5, Android 11) gave Setup no SIMs with both SIMs in and phone access allowed.
+        //   adb shell am start -n com.chalaiden.app/.MainActivity --ez sims_probe true
+        if (BuildConfig.DEBUG && intent?.getBooleanExtra("sims_probe", false) == true) {
+            java.io.File(filesDir, "sims.log").writeText(Dialer.probe(this))
+        }
         if (BuildConfig.DEBUG && intent?.hasExtra("ussd_probe") == true) {
             com.chalaiden.app.ussd.UssdProbe.send(this, intent.getStringExtra("ussd_probe").orEmpty(), simId())
         }
