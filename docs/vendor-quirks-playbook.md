@@ -352,7 +352,7 @@ adb shell settings get secure default_input_method
 | The USSD dialog never opens from Chalaiden | The dial needs a foreground activity (OxygenOS), or the maker blocks `CALL` for USSD | `MainActivity.drive` / `Dialer` |
 | Guided card disappears between prompts | The dialog closes on Send (same as the `lost` row) | `PhoneQuirks.closesDialogOnSend` → `frontGapMillis` |
 | Setup says "No SIM found" with SIMs in and phone access allowed | The maker hides the SIM list from apps | `Dialer.simsBySlot` / `accountBySlot` already cover it; run `--ez sims_probe true` and read `files/sims.log` to see which calls are refused |
-| `dialled`, then `lost`, and bKash's menu appears later | Another app also takes calls (a VoIP app), so Android asked "Complete action using" behind the cover | `Dialer.systemCaller` aims the dial at the system handler; check `cmd package query-activities -a android.intent.action.CALL -d tel:1` |
+| `dialled`, then `lost`, and bKash's menu appears later | Another app also takes calls (a VoIP app), so Android asked "Complete action using" behind the cover | `Dialer.systemCaller` always dials through the system handler; check `cmd package query-activities -a android.intent.action.CALL -d tel:1` |
 | Accessibility walk fails at once with `failed: … No Root shell` | The service wasn't connected when the walk started, so Chalaiden fell back to Root. Something unbound it: `uiautomator dump`, or it's off | Check `dumpsys accessibility` → Bound services; don't run `uiautomator` during a walk |
 | bKash shows "Do you want to continue? 1-Yes 2-No" first | An unfinished earlier session (not a vendor quirk) | Already handled: `Prompt.isResumeOffer` |
 

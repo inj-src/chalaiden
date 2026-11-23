@@ -105,14 +105,14 @@ object Dialer {
         }
 
     /**
-     * The phone's own call handler, when another app also takes calls. A VoIP app (ZoiPer on a REDMI K20
-     * Pro, 2026-11-23) answers ACTION_CALL too, and Android then asks "Complete action using" behind
-     * Chalaiden's cover, so bKash's menu never opens. With one handler nothing changes.
+     * The phone's own call handler, always: `*247#` is for the SIM, never for another calling app. A
+     * VoIP app (ZoiPer on a REDMI K20 Pro, 2026-11-23) answers ACTION_CALL too, and Android then asks
+     * "Complete action using" behind Chalaiden's cover, so bKash's menu never opens. Null (Android
+     * picks, as before) unless exactly one system app takes calls.
      */
     private fun systemCaller(context: Context, intent: Intent): ComponentName? = runCatching {
-        val handlers = context.packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
-        if (handlers.size < 2) return@runCatching null
-        handlers.map { it.activityInfo }
+        context.packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            .map { it.activityInfo }
             .filter { it.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0 }
             .singleOrNull()?.let { ComponentName(it.packageName, it.name) }
     }.getOrNull()
