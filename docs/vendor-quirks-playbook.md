@@ -155,6 +155,10 @@ adb shell 'uiautomator dump /data/local/tmp/u.xml >/dev/null && cat /data/local/
 adb shell dumpsys window | grep mCurrentFocus     # every display; vivo lists an extra null one
 ```
 
+`uiautomator dump` unbinds every accessibility service while it runs, Chalaiden's included. Never run
+it while an Accessibility walk is going: the session falls back to Root and fails with
+`No Root shell`. The helper's `tree` op (below) reads the same thing and leaves services alone.
+
 From the dump, record:
 
 - the `package` of the dialog window (expected `com.android.phone`);
@@ -177,6 +181,17 @@ adb shell "(echo '{\"op\":\"look\"}'; sleep 1) | CLASSPATH=$APK app_process /sys
 # {"ready":true}
 # {"win":true,"progress":false,"message":"...","input":true,"field":"","password":false}
 ```
+
+For the whole layout, every window with each node's id, class, text and flags, use `tree`. It works
+during any walk, so it's the way to see a dialog that sits behind Chalaiden's cover:
+
+```sh
+adb shell "(echo '{\"op\":\"tree\"}'; sleep 1) | CLASSPATH=$APK app_process /system/bin com.chalaiden.app.helper.UiHelper" \
+  | sed -E 's/[0-9]{4,}/####/g' | python3 -c 'import json,sys; [print(l) for o in map(json.loads, sys.stdin) for l in o.get("lines", [])]'
+```
+
+To catch every screen of a walk, send `tree` in a loop (`for i in $(seq 18); do echo '{"op":"tree"}';
+sleep 0.7; done | …`) while it runs.
 
 - `win:false` while the dialog is up: `root()` doesn't find the phone's window.
 - An empty or wrong `message`: the text lives under an id `MESSAGE_IDS` doesn't know.
@@ -221,7 +236,15 @@ Lines that mean trouble:
 | `failed: …` | The shell, the helper or the service failed |
 | `helper closed` | Normal after a session |
 
-The walk itself: Home → **Balance** → tap one digit → wait about 10 s (watch the log) → **Cancel**. On
+The walk itself: Home → **Balance** → tap one digit → wait about 10 s (watch the log) → **Cancel**.
+
+Without touching the screen (debug build; needed on HyperOS, where adb can't tap):
+
+```sh
+adb shell am start -n com.chalaiden.app/.MainActivity --es walk balance   # dials, stops at bKash's PIN prompt
+adb shell am start -n com.chalaiden.app/.MainActivity --es walk cancel    # closes it; no PIN is ever typed
+```
+ On
 the shell side, check that the dialog is gone (`mCurrentFocus` isn't `com.android.phone`) and that the
 keyboard works again in any text field.
 
@@ -245,6 +268,8 @@ adb shell settings put secure accessibility_enabled 1
 adb shell dumpsys accessibility | grep -A1 "Bound services"     # Chalaiden should be listed
 ```
 
+- HyperOS refuses `settings put secure` from adb (see **Known quirks**). There, the volunteer turns
+  Chalaiden on in Setup → Accessibility → "Turn on in Settings", and off again at the end.
 - Turning the service on over adb skips Android 13+'s "restricted settings" block. Also record
   whether the volunteer's phone greys out the switch in Settings for a sideloaded app, and where the
   ⋮ → "Allow restricted settings" item lives. Setup's guide depends on that.
@@ -296,6 +321,8 @@ adb shell settings get secure enabled_accessibility_services
 adb shell settings get secure default_input_method
 ```
 
+- On HyperOS the `settings put` line fails: the volunteer switches Chalaiden off in Settings ›
+  Accessibility themselves. Check with `dumpsys accessibility | grep -A1 "Bound services"`.
 - If a session was killed while the keyboards were off (Root/Shizuku), Chalaiden puts them back on
   its next launch. Check `ime list -s` against what you saved anyway.
 - Then leave the phone on its home screen, and give it back.
@@ -319,6 +346,7 @@ adb shell settings get secure default_input_method
 | A SIM picker appears despite a chosen SIM | The maker's telecom ignores the call intent's phone account | `Dialer.callIntent`; a `PhoneQuirks` flag if the picker has to be answered |
 | The USSD dialog never opens from Chalaiden | The dial needs a foreground activity (OxygenOS), or the maker blocks `CALL` for USSD | `MainActivity.drive` / `Dialer` |
 | Guided card disappears between prompts | The dialog closes on Send (same as the `lost` row) | `PhoneQuirks.closesDialogOnSend` → `frontGapMillis` |
+| Accessibility walk fails at once with `failed: … No Root shell` | The service wasn't connected when the walk started, so Chalaiden fell back to Root. Something unbound it: `uiautomator dump`, or it's off | Check `dumpsys accessibility` → Bound services; don't run `uiautomator` during a walk |
 | bKash shows "Do you want to continue? 1-Yes 2-No" first | An unfinished earlier session (not a vendor quirk) | Already handled: `Prompt.isResumeOffer` |
 
 ---
@@ -362,6 +390,10 @@ adb shell settings get secure default_input_method
 | vivo | `dumpsys window` lists an extra display first whose focus is always null | `DumpScreen.FOCUS` greps every display |
 | vivo | The SIM picker is `com.android.server.telecom` | Noted; Chalaiden passes the chosen SIM |
 | Banglalink SIM (seen on vivo) | bKash menu lines have no space: `9.My bKash` | `Prompt.menuLine` |
+| Xiaomi / Redmi (REDMI Turbo 4 Pro, Android 17, HyperOS 4) | bKash's text is in `com.android.phone:id/ussd_message`, under a `title` that says "Carrier info". With no known id, the title outran "Enter PIN:" in the longest-text fallback | `Prompt.MESSAGE_IDS` |
+| HyperOS | The dialog activity is `MiuiMMIDialogActivity`, still `com.android.phone`; progress text "USSD code running…" in `com.android.phone:id/message`; buttons are stock `android:id/button1/2`. The PIN box isn't marked password | Nothing needed |
+| HyperOS | adb can't `input tap` (`INJECT_EVENTS`) or `settings put secure` (`WRITE_SECURE_SETTINGS`) unless Developer options › "USB debugging (Security settings)" is on, which needs a Mi account. `app_process` UiAutomation works | Walk with `--es walk balance|cancel`; the volunteer toggles Accessibility by hand |
+| Any phone | A UiAutomation connection unbinds every accessibility service unless it asks not to (TalkBack too) | `UiHelper.connect()` passes `FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES` |
 | Android 13+ (any maker), sideloaded APK | The accessibility switch is greyed out until App info → ⋮ → Allow restricted settings | Setup's Accessibility guide, first page |
 | Android Go (`ro.config.low_ram=true`) | No "display over other apps" | Not built yet. Accessibility's overlay may be the way; verify on a Go phone |
 
@@ -374,6 +406,7 @@ after logging in or on other phones. Record what you see; don't log in to anyone
 | Maker / model | Android / skin | Date | Guided | Accessibility | Shizuku | Root | Notes |
 |---|---|---|---|---|---|---|---|
 | OnePlus CPH2767 | 16 / OxygenOS | 2026-11-23 | ✓ | ✓ walked to PIN, Cancel ok | ✓ | ✓ | Maintainer's phone |
+| REDMI Turbo 4 Pro (25053RT47C) | 17 / HyperOS 4 | 2026-11-23 | not tried | ✓ walked to PIN, Cancel ok (after the `ussd_message` fix) | not installed (helper works from adb) | — | SIM 2 (`sim=1`); no overlay permission, so the cover was the accessibility overlay |
 | vivo V2445A | 15 / OriginOS 5 | 2026-11-12 | ✓ | not yet | ✓ walked to PIN, Cancel ok | — | SIM 2 Banglalink |
 
 ---

@@ -300,6 +300,24 @@ class MainActivity : ComponentActivity() {
                 null -> Unit
             }
         }
+        // Debug builds only: walk bKash's balance menu to its PIN prompt and stop there, then close it,
+        // without touching the screen. HyperOS refuses `adb shell input` unless "USB debugging (Security
+        // settings)" is on, which needs a Mi account (REDMI Turbo 4 Pro, 2026-11-23). No PIN is ever typed:
+        // the walk waits at bKash's PIN prompt until `walk cancel`.
+        //   adb shell am start -n com.chalaiden.app/.MainActivity --es walk balance|cancel
+        if (BuildConfig.DEBUG && intent?.hasExtra("walk") == true) {
+            when (intent.getStringExtra("walk")) {
+                "balance" -> if (!UssdSession.isActive) {
+                    home()
+                    start(Flows.balance())
+                    lifecycleScope.launch { delay(1_000); UssdSession.warmUp() }
+                }
+                "cancel" -> {
+                    PinEntry.reset()
+                    UssdSession.abandon()
+                }
+            }
+        }
         if (BuildConfig.DEBUG && intent?.hasExtra("ussd_probe") == true) {
             com.chalaiden.app.ussd.UssdProbe.send(this, intent.getStringExtra("ussd_probe").orEmpty(), simId())
         }
