@@ -18,12 +18,15 @@ object Prompt {
      * Where the phone app puts bKash's text, in order of trust. HyperOS has its own `ussd_message`
      * under a "Carrier info" title, and the title outran "Enter PIN:" in the longest-text fallback
      * (REDMI Turbo 4 Pro, Android 17, HyperOS 4, 2026-11-23). vivo's dialog puts the text in the title
-     * (`alertTitle`), so that comes last: elsewhere a title is not the message.
+     * (`alertTitle`), so that comes last: elsewhere a title is not the message. Samsung (One UI 6.1,
+     * Galaxy A13, Android 14, 2026-11-23) uses `com.android.phone:id/message`; HyperOS uses that id
+     * only for its progress text, which [isProgress] catches first.
      */
     val MESSAGE_IDS = listOf(
         "com.android.phone:id/message_field",
         "android:id/message",
         "com.android.phone:id/ussd_message",
+        "com.android.phone:id/message",
         "com.android.phone:id/alertTitle",
     )
 

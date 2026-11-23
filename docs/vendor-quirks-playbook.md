@@ -393,6 +393,7 @@ adb shell settings get secure default_input_method
 | Xiaomi / Redmi (REDMI Turbo 4 Pro, Android 17, HyperOS 4) | bKash's text is in `com.android.phone:id/ussd_message`, under a `title` that says "Carrier info". With no known id, the title outran "Enter PIN:" in the longest-text fallback | `Prompt.MESSAGE_IDS` |
 | HyperOS | The dialog activity is `MiuiMMIDialogActivity`, still `com.android.phone`; progress text "USSD code running…" in `com.android.phone:id/message`; buttons are stock `android:id/button1/2`. The PIN box isn't marked password | Nothing needed |
 | HyperOS | adb can't `input tap` (`INJECT_EVENTS`) or `settings put secure` (`WRITE_SECURE_SETTINGS`) unless Developer options › "USB debugging (Security settings)" is on, which needs a Mi account. `app_process` UiAutomation works | Walk with `--es walk balance|cancel`; the volunteer toggles Accessibility by hand |
+| Samsung (Galaxy A13 SM-A135F, Android 14, One UI 6.1) | bKash's text is in `com.android.phone:id/message`, with no title. Buttons are stock `android:id/button1/2` in a `sem_buttonBarLayout`; progress text "USSD code running…" in `android:id/message`. The PIN box isn't marked password. adb can grant permissions and `settings put secure` | `Prompt.MESSAGE_IDS` |
 | Any phone | A UiAutomation connection unbinds every accessibility service unless it asks not to (TalkBack too) | `UiHelper.connect()` passes `FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES` |
 | Android 13+ (any maker), sideloaded APK | The accessibility switch is greyed out until App info → ⋮ → Allow restricted settings | Setup's Accessibility guide, first page |
 | Android Go (`ro.config.low_ram=true`) | No "display over other apps" | Not built yet. Accessibility's overlay may be the way; verify on a Go phone |
@@ -406,6 +407,7 @@ after logging in or on other phones. Record what you see; don't log in to anyone
 | Maker / model | Android / skin | Date | Guided | Accessibility | Shizuku | Root | Notes |
 |---|---|---|---|---|---|---|---|
 | OnePlus CPH2767 | 16 / OxygenOS | 2026-11-23 | ✓ | ✓ walked to PIN, Cancel ok | ✓ | ✓ | Maintainer's phone |
+| Samsung Galaxy A13 (SM-A135F) | 14 / One UI 6.1 | 2026-11-23 | not tried | ✓ walked to PIN, Cancel ok | not installed (release helper works from adb) | — | SIM 2 (`sim=2`); no overlay permission, so the cover was the accessibility overlay |
 | REDMI Turbo 4 Pro (25053RT47C) | 17 / HyperOS 4 | 2026-11-23 | not tried | ✓ walked to PIN, Cancel ok (after the `ussd_message` fix) | not installed (helper works from adb) | — | SIM 2 (`sim=1`); no overlay permission, so the cover was the accessibility overlay |
 | vivo V2445A | 15 / OriginOS 5 | 2026-11-12 | ✓ | not yet | ✓ walked to PIN, Cancel ok | — | SIM 2 Banglalink |
 
