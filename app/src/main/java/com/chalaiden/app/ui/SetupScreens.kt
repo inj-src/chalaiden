@@ -389,7 +389,6 @@ private fun WayStep(
             icon = { GuidedBadge() },
             title = "Guided mode",
             tag = "Any phone",
-            badge = badge(Method.Guided, inUse, works = true),
             detail = when {
                 inUse == Method.Guided && !keyboardOn ->
                     "Turn on the Chalaiden keyboard, so each reply is typed into bKash's box for you."
@@ -404,7 +403,6 @@ private fun WayStep(
             icon = { AccessibilityBadge() },
             title = "Accessibility",
             tag = "No root or Shizuku",
-            badge = badge(Method.Accessibility, inUse, a11yOk),
             detail = if (a11yOk) {
                 "Chalaiden's accessibility service is on. It answers bKash for you, behind its own screen."
             } else {
@@ -417,7 +415,6 @@ private fun WayStep(
             icon = { AppTile(R.drawable.shizuku_icon, 40) },
             title = "Shizuku",
             tag = "No root needed",
-            badge = badge(Method.Shizuku, inUse, shizukuOk),
             detail = shizukuBody(shizuku, shizukuOk),
             selected = choice == Method.Shizuku,
         ) { onPick(Method.Shizuku) }
@@ -425,18 +422,11 @@ private fun WayStep(
             icon = { RootTrio() },
             title = "Root",
             tag = "Rooted phones",
-            badge = badge(Method.Root, inUse, rootOk),
             detail = if (rootOk) "Root allows Chalaiden. It answers bKash for you, behind its own screen."
             else "Chalaiden answers bKash for you. Allow it in your root manager when it asks.",
             selected = choice == Method.Root,
         ) { onPick(Method.Root) }
     }
-}
-
-/** Only what stands in the way: a method that still needs something says so; one that works says nothing. */
-private fun badge(method: Method, inUse: Method?, works: Boolean) = when {
-    inUse == method || works -> null
-    else -> "Needs setup"
 }
 
 /** One way to answer bKash; picking it opens a line on what it does and what's left to do. */
@@ -445,7 +435,6 @@ private fun WayRow(
     icon: @Composable () -> Unit,
     title: String,
     tag: String,
-    badge: String?,
     detail: String,
     selected: Boolean,
     onClick: () -> Unit,
@@ -463,15 +452,7 @@ private fun WayRow(
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(title, style = Type.title, color = t.ink)
-                Text(tag, style = Type.label, color = t.inkSoft, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            badge?.let {
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    it, style = Type.label, color = t.inkSoft,
-                    modifier = Modifier.clip(RoundedCornerShape(50)).background(t.raised)
-                        .padding(horizontal = 10.dp, vertical = 3.dp),
-                )
+                Text(tag, style = Type.label, color = t.inkSoft)
             }
             Spacer(Modifier.width(12.dp))
             Radio(selected)
