@@ -22,6 +22,7 @@ import kotlin.system.exitProcess
  *   {"op":"reply","text":str,"expect":str} -> {"ok":bool, "why":str?}   only if the message is still
  *                                  [expect]: set the field, check it, press Send
  *   {"op":"press","id":"button2"}  -> {"ok":bool}
+ *   {"op":"tree"}                  -> {"lines":[str]}  every window and node, for diagnosing a new phone
  * The first line written is {"ready":true} or {"ready":false,"why":str}.
  */
 object UiHelper {
@@ -67,6 +68,7 @@ object UiHelper {
             "reply" -> dialog.reply(req.getString("text"), req.getString("expect"))
                 .let { why -> JSONObject().put("ok", why == null).apply { if (why != null) put("why", why) } }
             "press" -> JSONObject().put("ok", dialog.press(req.getString("id")))
+            "tree" -> JSONObject().put("lines", org.json.JSONArray(dialog.tree()))
             else -> JSONObject().put("ok", false).put("why", "unknown op")
         }
     }
@@ -83,8 +85,12 @@ object UiHelper {
             UiAutomation::class.java.getDeclaredConstructor(Context::class.java, iface).newInstance(systemContext(), connection)
         }
         val cls = UiAutomation::class.java
-        runCatching { cls.getMethod("connectWithTimeout", Int::class.javaPrimitiveType, Long::class.javaPrimitiveType).invoke(ui, 0, 5_000L) }
-            .recoverCatching { cls.getMethod("connect", Int::class.javaPrimitiveType).invoke(ui, 0) }
+        // Without this flag Android unbinds every accessibility service while the connection lasts: a
+        // TalkBack user would lose their screen reader mid-payment, and Chalaiden's own service drops
+        // (seen as the Accessibility method failing to start, REDMI Turbo 4 Pro, 2026-11-23).
+        val keepServices = UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES
+        runCatching { cls.getMethod("connectWithTimeout", Int::class.javaPrimitiveType, Long::class.javaPrimitiveType).invoke(ui, keepServices, 5_000L) }
+            .recoverCatching { cls.getMethod("connect", Int::class.javaPrimitiveType).invoke(ui, keepServices) }
             .recoverCatching { cls.getMethod("connect").invoke(ui) }
             .getOrThrow()
         ui.serviceInfo = ui.serviceInfo.apply {

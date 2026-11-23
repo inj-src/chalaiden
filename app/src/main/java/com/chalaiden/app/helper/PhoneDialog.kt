@@ -81,6 +81,25 @@ internal class PhoneDialog(
         return button.performAction(AccessibilityNodeInfo.ACTION_CLICK)
     }
 
+    /**
+     * Every window and its nodes, one line each ("id Class "text" edit password click"), for finding
+     * where a new phone puts bKash's text. Not used by sessions.
+     */
+    fun tree(): List<String> = windows().sortedByDescending { it.layer }.flatMap { w ->
+        val root = w.root
+        listOf("window layer=${w.layer} type=${w.type} pkg=${root?.packageName} title=${w.title}") +
+            root?.let(::flatten).orEmpty().map { n ->
+                listOfNotNull(
+                    "  " + (n.viewIdResourceName ?: "-"),
+                    n.className?.toString()?.substringAfterLast('.'),
+                    n.text?.let { "\"$it\"" },
+                    "edit".takeIf { n.isEditable },
+                    "password".takeIf { n.isPassword },
+                    "click".takeIf { n.isClickable },
+                ).joinToString(" ")
+            }
+    }
+
     private fun flatten(root: AccessibilityNodeInfo): List<AccessibilityNodeInfo> {
         val out = ArrayList<AccessibilityNodeInfo>()
         val stack = ArrayDeque<AccessibilityNodeInfo>().apply { add(root) }
