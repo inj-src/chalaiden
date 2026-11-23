@@ -101,6 +101,11 @@ Start a report from the template at the end of this file, saved as
 
 ### 1. Connect and record the phone
 
+**Xiaomi, Redmi and POCO (MIUI or HyperOS):** before the session, ask the volunteer to turn on
+Developer options › **Install via USB** and **USB debugging (Security settings)**. Both need a signed-in
+Mi account, which is slow to sort out on the spot. Without them adb can't install, tap, or change any
+setting, not even the screen timeout.
+
 The volunteer turns on Developer options and USB debugging, then accepts the RSA prompt.
 
 ```sh
@@ -346,6 +351,8 @@ adb shell settings get secure default_input_method
 | A SIM picker appears despite a chosen SIM | The maker's telecom ignores the call intent's phone account | `Dialer.callIntent`; a `PhoneQuirks` flag if the picker has to be answered |
 | The USSD dialog never opens from Chalaiden | The dial needs a foreground activity (OxygenOS), or the maker blocks `CALL` for USSD | `MainActivity.drive` / `Dialer` |
 | Guided card disappears between prompts | The dialog closes on Send (same as the `lost` row) | `PhoneQuirks.closesDialogOnSend` → `frontGapMillis` |
+| Setup says "No SIM found" with SIMs in and phone access allowed | The maker hides the SIM list from apps | `Dialer.simsBySlot` / `accountBySlot` already cover it; run `--ez sims_probe true` and read `files/sims.log` to see which calls are refused |
+| `dialled`, then `lost`, and bKash's menu appears later | Another app also takes calls (a VoIP app), so Android asked "Complete action using" behind the cover | `Dialer.systemCaller` aims the dial at the system handler; check `cmd package query-activities -a android.intent.action.CALL -d tel:1` |
 | Accessibility walk fails at once with `failed: … No Root shell` | The service wasn't connected when the walk started, so Chalaiden fell back to Root. Something unbound it: `uiautomator dump`, or it's off | Check `dumpsys accessibility` → Bound services; don't run `uiautomator` during a walk |
 | bKash shows "Do you want to continue? 1-Yes 2-No" first | An unfinished earlier session (not a vendor quirk) | Already handled: `Prompt.isResumeOffer` |
 
@@ -393,6 +400,11 @@ adb shell settings get secure default_input_method
 | Xiaomi / Redmi (REDMI Turbo 4 Pro, Android 17, HyperOS 4) | bKash's text is in `com.android.phone:id/ussd_message`, under a `title` that says "Carrier info". With no known id, the title outran "Enter PIN:" in the longest-text fallback | `Prompt.MESSAGE_IDS` |
 | HyperOS | The dialog activity is `MiuiMMIDialogActivity`, still `com.android.phone`; progress text "USSD code running…" in `com.android.phone:id/message`; buttons are stock `android:id/button1/2`. The PIN box isn't marked password | Nothing needed |
 | HyperOS | adb can't `input tap` (`INJECT_EVENTS`) or `settings put secure` (`WRITE_SECURE_SETTINGS`) unless Developer options › "USB debugging (Security settings)" is on, which needs a Mi account. `app_process` UiAutomation works | Walk with `--es walk balance|cancel`; the volunteer toggles Accessibility by hand |
+| Xiaomi (Redmi K20 Pro, MIUI 12.5 China ROM, Android 11) | Hands apps an empty SIM list and refuses `getSubscriptionId(PhoneAccountHandle)`, with READ_PHONE_STATE granted and its app-op allowed in every list. Slot calls still work: `getSimState`, `getSubscriptionIds(slot)`, and the SIM accounts' `android.telecom.extra.SORT_ORDER` (= slot) | `Dialer.simsBySlot`, `Dialer.accountBySlot` |
+| MIUI 12.5 | Same dialog layout as HyperOS (`ussd_message` under a "Carrier info" `miui:id/alertTitle`), in `MiuiMMIDialogActivity` | `Prompt.MESSAGE_IDS` |
+| MIUI | Turning on any accessibility service shows a "Danger" sheet with a forced countdown before OK | Nothing; tell the volunteer to wait and tap OK |
+| MIUI China ROM | adb installs are blocked ("Blocked installation via USB") until Install via USB is on and the on-screen prompt is accepted | Runbook step 1 |
+| Any phone with a VoIP app (seen: ZoiPer) | ACTION_CALL gets a "Complete action using" chooser | `Dialer.systemCaller` |
 | Samsung (Galaxy A13 SM-A135F, Android 14, One UI 6.1) | bKash's text is in `com.android.phone:id/message`, with no title. Buttons are stock `android:id/button1/2` in a `sem_buttonBarLayout`; progress text "USSD code running…" in `android:id/message`. The PIN box isn't marked password. adb can grant permissions and `settings put secure` | `Prompt.MESSAGE_IDS` |
 | Any phone | A UiAutomation connection unbinds every accessibility service unless it asks not to (TalkBack too) | `UiHelper.connect()` passes `FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES` |
 | Android 13+ (any maker), sideloaded APK | The accessibility switch is greyed out until App info → ⋮ → Allow restricted settings | Setup's Accessibility guide, first page |
@@ -407,6 +419,7 @@ after logging in or on other phones. Record what you see; don't log in to anyone
 | Maker / model | Android / skin | Date | Guided | Accessibility | Shizuku | Root | Notes |
 |---|---|---|---|---|---|---|---|
 | OnePlus CPH2767 | 16 / OxygenOS | 2026-11-23 | ✓ | ✓ walked to PIN, Cancel ok | ✓ | ✓ | Maintainer's phone |
+| Redmi K20 Pro (raphael) | 11 / MIUI 12.5 China | 2026-11-23 | not tried | ✓ walked to PIN, Cancel ok (after the SIM and chooser fixes) | not installed (helper works from adb) | — | Two Grameenphone SIMs, SIM 1 chosen; ZoiPer installed; build is `test-keys` |
 | Samsung Galaxy A13 (SM-A135F) | 14 / One UI 6.1 | 2026-11-23 | not tried | ✓ walked to PIN, Cancel ok | not installed (release helper works from adb) | — | SIM 2 (`sim=2`); no overlay permission, so the cover was the accessibility overlay |
 | REDMI Turbo 4 Pro (25053RT47C) | 17 / HyperOS 4 | 2026-11-23 | not tried | ✓ walked to PIN, Cancel ok (after the `ussd_message` fix) | not installed (helper works from adb) | — | SIM 2 (`sim=1`); no overlay permission, so the cover was the accessibility overlay |
 | vivo V2445A | 15 / OriginOS 5 | 2026-11-12 | ✓ | not yet | ✓ walked to PIN, Cancel ok | — | SIM 2 Banglalink |
