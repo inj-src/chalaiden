@@ -15,10 +15,17 @@ object Prompt {
         text.contains("Running USSD", ignoreCase = true) || text.contains("USSD code running", ignoreCase = true)
 
     /**
-     * Where the phone app puts bKash's text, in order of trust. vivo's dialog puts it in the title
-     * (`alertTitle`), so that comes after the stock ids: elsewhere a title is not the message.
+     * Where the phone app puts bKash's text, in order of trust. HyperOS has its own `ussd_message`
+     * under a "Carrier info" title, and the title outran "Enter PIN:" in the longest-text fallback
+     * (REDMI Turbo 4 Pro, Android 17, HyperOS 4, 2026-11-23). vivo's dialog puts the text in the title
+     * (`alertTitle`), so that comes last: elsewhere a title is not the message.
      */
-    val MESSAGE_IDS = listOf("com.android.phone:id/message_field", "android:id/message", "com.android.phone:id/alertTitle")
+    val MESSAGE_IDS = listOf(
+        "com.android.phone:id/message_field",
+        "android:id/message",
+        "com.android.phone:id/ussd_message",
+        "com.android.phone:id/alertTitle",
+    )
 
     fun lines(text: String): List<String> = text.lines().map { it.trim() }.filter { it.isNotEmpty() }
 
