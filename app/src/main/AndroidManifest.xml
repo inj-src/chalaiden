@@ -13,6 +13,11 @@
     <!-- To tell "Shizuku isn't installed" from "Shizuku isn't running" (package visibility, API 30+). -->
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
+        <!-- Every app that takes calls, to dial through the phone's own one (Dialer.systemCaller). -->
+        <intent>
+            <action android:name="android.intent.action.CALL" />
+            <data android:scheme="tel" />
+        </intent>
     </queries>
 
     <application
