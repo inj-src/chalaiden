@@ -1,5 +1,6 @@
 package com.chalaiden.app.ussd
 
+import com.chalaiden.app.helper.PhoneDialog
 import org.json.JSONObject
 import java.io.Closeable
 import java.util.concurrent.LinkedBlockingQueue
@@ -27,6 +28,54 @@ internal interface UssdScreen : Closeable {
 
     /** Last resort when a dialog has no buttons at all. */
     fun back()
+}
+
+/** What [PhoneDialog] saw, as the driver reads it; null when no phone dialog is up. */
+internal fun PhoneDialog.Seen.toLook(): Look? {
+    if (!win) return null
+    val box = if (input) field else null
+    if (progress) return Look(Dialog.Progress, box, password)
+    val text = message.trim()
+    val dialog = when {
+        text.isEmpty() -> null
+        box != null -> Dialog.Prompt(text)
+        else -> Dialog.Notice(text)
+    }
+    return Look(dialog, box, password)
+}
+
+/**
+ * Accessibility method: Chalaiden's own service ([ChalaidenAccessibility]) reads the dialog and answers
+ * it with node actions, exactly as [HelperScreen] does, without any shell. Looks are as cheap.
+ */
+internal class AccessibilityScreen(private val service: ChalaidenAccessibility) : UssdScreen {
+    override val pollMillis = 120L
+
+    private val dialog = service.dialog()
+
+    /** Switched off in Settings mid-session: end the session instead of waiting for a dialog it can't see. */
+    private fun check() {
+        check(ChalaidenAccessibility.instance === service) { "accessibility service stopped" }
+    }
+
+    override fun look(): Look? {
+        check()
+        return dialog.look().toLook()
+    }
+
+    override fun reply(text: String, expect: String, seen: Look?): Boolean {
+        check()
+        return dialog.reply(text, expect) == null
+    }
+
+    override fun press(id: String): Boolean {
+        check()
+        return dialog.press(id)
+    }
+
+    override fun back() = Unit // every USSD dialog has buttons; never send BACK blind
+
+    override fun close() = Unit // the service stays on; it is the user's to switch off
 }
 
 /**
@@ -58,17 +107,14 @@ internal class HelperScreen private constructor(private val proc: Process) : Uss
 
     override fun look(): Look? {
         val o = call(JSONObject().put("op", "look"))
-        if (!o.optBoolean("win")) return null
-        val field = if (o.optBoolean("input")) o.optString("field") else null
-        val password = o.optBoolean("password")
-        if (o.optBoolean("progress")) return Look(Dialog.Progress, field, password)
-        val text = o.optString("message").trim()
-        val dialog = when {
-            text.isEmpty() -> null
-            field != null -> Dialog.Prompt(text)
-            else -> Dialog.Notice(text)
-        }
-        return Look(dialog, field, password)
+        return PhoneDialog.Seen(
+            win = o.optBoolean("win"),
+            progress = o.optBoolean("progress"),
+            message = o.optString("message"),
+            input = o.optBoolean("input"),
+            field = o.optString("field"),
+            password = o.optBoolean("password"),
+        ).toLook()
     }
 
     override fun reply(text: String, expect: String, seen: Look?): Boolean =
@@ -94,6 +140,7 @@ internal class HelperScreen private constructor(private val proc: Process) : Uss
             val p = when (backend) {
                 Backend.Root -> ProcessBuilder("su").start()
                 Backend.Shizuku -> ShizukuAccess.newShell()
+                Backend.Accessibility -> return null // the service reads the dialog itself (AccessibilityScreen)
             }
             val screen = HelperScreen(p)
             screen.writer.write("exec env CLASSPATH='$apkPath' app_process /system/bin com.chalaiden.app.helper.UiHelper 2>/dev/null\n")

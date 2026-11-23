@@ -18,12 +18,19 @@ enum class Backend {
      * Shizuku's server, started over Wireless Debugging: the shell user (uid 2000), or root when Shizuku
      * itself was started with root. No root needed, but it has to be started again after every reboot.
      */
-    Shizuku;
+    Shizuku,
+
+    /**
+     * Chalaiden's own accessibility service ([ChalaidenAccessibility]), switched on by the user in
+     * Settings. No shell at all: it reads and answers the dialog itself, and has no `id` to check.
+     */
+    Accessibility;
 
     /** True when `id` output shows this backend's rights. */
     internal fun accepts(id: String) = when (this) {
         Root -> id.contains("uid=0")
         Shizuku -> id.contains("uid=0") || id.contains("uid=2000(")
+        Accessibility -> false
     }
 }
 

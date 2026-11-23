@@ -103,7 +103,7 @@ class Prefs(context: Context) {
         set(value) = sp.edit().putString("method", value?.name).remove("guided").apply()
 }
 
-/** The three ways Chalaiden can answer bKash's menu. Any one is enough. */
+/** The ways Chalaiden can answer bKash's menu. Any one is enough. */
 enum class Method {
     /** Automatic, with root. */
     Root,
@@ -113,4 +113,7 @@ enum class Method {
 
     /** The user types each reply; Chalaiden floats it above bKash's menu. Any phone. */
     Guided,
+
+    /** Automatic, with Chalaiden's accessibility service (no root or Shizuku). Off until the user switches it on. */
+    Accessibility,
 }

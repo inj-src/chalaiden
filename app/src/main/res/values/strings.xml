@@ -3,4 +3,7 @@
     <string name="keyboard_name">Chalaiden</string>
     <string name="keyboard_subtype">bKash replies</string>
     <string name="shortcut_scan">Scan to pay</string>
+    <string name="accessibility_label">Chalaiden</string>
+    <string name="accessibility_summary">Answers bKash\'s *247# menu for you</string>
+    <string name="accessibility_description">Chalaiden answers bKash\'s *247# menu for you, behind its own screen. It only reads the phone app\'s USSD dialog, and only while you pay or check your balance. You always type your PIN yourself; Chalaiden never stores it.</string>
 </resources>

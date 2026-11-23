@@ -107,6 +107,14 @@ object AppIcons {
     /** A clock face: "bKash was still busy, wait a moment". */
     val Clock = svg("clock", "M12 3.5a8.5 8.5 0 1 1 0 17a8.5 8.5 0 1 1 0-17z", "M12 7.5V12l3 2")
 
+    /** Android's accessibility figure: a head, arms out, legs apart. */
+    val Accessibility = svg(
+        "accessibility",
+        "M12 3.2a1.6 1.6 0 1 1 0 3.2a1.6 1.6 0 1 1 0-3.2z",
+        "M5 8.5c2.3 0.7 4.6 1 7 1s4.7-0.3 7-1",
+        "M12 9.5v4.5l-3 6.5M12 14l3 6.5",
+    )
+
     /** Three dots, for a menu. Filled: thin strokes read as rings at this size. */
     val More = ImageVector.Builder("more", 24.dp, 24.dp, 24f, 24f).apply {
         listOf(5f, 12f, 19f).forEach { y ->

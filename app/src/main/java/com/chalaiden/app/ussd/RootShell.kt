@@ -49,6 +49,7 @@ class RootShell private constructor(private val proc: Process) : Closeable {
             val p = when (backend) {
                 Backend.Root -> ProcessBuilder("su").redirectErrorStream(true).start()
                 Backend.Shizuku -> ShizukuAccess.newShell()
+                Backend.Accessibility -> return null // no shell behind it
             }
             RootShell(p).also { sh ->
                 // Shizuku can't merge stderr into stdout like redirectErrorStream; the shell does it instead.

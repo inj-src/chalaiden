@@ -48,6 +48,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import com.chalaiden.app.keyboard.ChalaidenKeyboard
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.drop
 import com.chalaiden.app.ui.AmountScreen
 import com.chalaiden.app.ui.HomeScreen
 import com.chalaiden.app.ui.GuideCover
@@ -63,6 +64,7 @@ import com.chalaiden.app.ui.MethodGuideScreen
 import com.chalaiden.app.ui.theme.ChalaidenTheme
 import com.chalaiden.app.vendor.PhoneQuirks
 import com.chalaiden.app.ussd.Backend
+import com.chalaiden.app.ussd.ChalaidenAccessibility
 import com.chalaiden.app.ussd.Dialer
 import com.chalaiden.app.ussd.FlowKind
 import com.chalaiden.app.ussd.Flows
@@ -108,6 +110,9 @@ class MainActivity : ComponentActivity() {
 
     /** Same for Shizuku, which is only tried without root. */
     @Volatile private var shizukuOk = false
+
+    /** Chalaiden's accessibility service is switched on and connected (the Accessibility method). */
+    @Volatile private var a11yOk = false
     private var stopWatchingShizuku: (() -> Unit)? = null
 
     /**
@@ -148,6 +153,8 @@ class MainActivity : ComponentActivity() {
         UssdSession.starter = { flow -> drive(flow) }
         // Shizuku hands over its binder a moment after launch, and loses it when it stops: re-check then.
         stopWatchingShizuku = ShizukuAccess.watch { checkSetup() }
+        // The accessibility service connects a moment after it is switched on, and may be switched off any time.
+        lifecycleScope.launch { ChalaidenAccessibility.running.drop(1).collect { checkSetup() } }
         handle(intent)
         // First launch: phone access was never given, so open on the setup steps.
         if (savedInstanceState == null && !Dialer.hasPermissions(this) && stack.toList() == listOf(Screen.Home)) {
@@ -214,6 +221,7 @@ class MainActivity : ComponentActivity() {
             }
             rootOk = root
             shizukuOk = shizuku
+            a11yOk = debugMode != "guided" && ChalaidenAccessibility.instance != null
             setupTick++
             then()
         }
@@ -221,15 +229,18 @@ class MainActivity : ComponentActivity() {
 
     /**
      * What the automatic driver runs on: the way the user chose in Setup, if it works; with no choice yet,
-     * root first, then Shizuku. Null means guided mode or setup.
+     * root first, then Shizuku, then the accessibility service. Null means guided mode or setup.
      */
     private fun backend(): Backend? = when (prefs.method) {
         Method.Root -> Backend.Root.takeIf { rootOk }
         Method.Shizuku -> Backend.Shizuku.takeIf { shizukuOk }
+        Method.Accessibility -> Backend.Accessibility.takeIf { a11yOk }
         Method.Guided -> null
         null -> when {
             rootOk -> Backend.Root
             shizukuOk -> Backend.Shizuku
+            // Only on because the user switched it on in Settings.
+            a11yOk -> Backend.Accessibility
             else -> null
         }
     }
@@ -238,6 +249,7 @@ class MainActivity : ComponentActivity() {
     private fun inUse(): Method? = when (backend()) {
         Backend.Root -> Method.Root
         Backend.Shizuku -> Method.Shizuku
+        Backend.Accessibility -> Method.Accessibility
         null -> Method.Guided.takeIf { prefs.method == Method.Guided }
     }
 
@@ -507,6 +519,7 @@ class MainActivity : ComponentActivity() {
                 prefs = prefs,
                 rootOk = rootOk,
                 shizukuOk = shizukuOk,
+                a11yOk = a11yOk,
                 shizuku = setupTick.let { shizukuStatus() },
                 inUse = setupTick.let { inUse() },
                 onChoose = { prefs.method = it; checkSetup() },
@@ -520,6 +533,7 @@ class MainActivity : ComponentActivity() {
                 shizuku = setupTick.let { shizukuStatus() },
                 shizukuOk = shizukuOk,
                 rootOk = rootOk,
+                a11yOk = a11yOk,
                 inUse = setupTick.let { inUse() },
                 onRecheck = { checkSetup() },
                 onUse = { prefs.method = it; checkSetup(); pop() },

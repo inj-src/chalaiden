@@ -16,6 +16,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.chalaiden.app.BuildConfig
 import com.chalaiden.app.ui.theme.ChalaidenTheme
+import com.chalaiden.app.ussd.ChalaidenAccessibility
 import com.chalaiden.app.ussd.UssdDriver
 import com.chalaiden.app.ussd.RunState
 import com.chalaiden.app.ussd.UssdSession
@@ -36,8 +37,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 /**
- * Chalaiden's run screen ([RunOverlay]) in a "draw over other apps" window, so it sits above the
- * phone app's USSD dialogs for the whole session and the user never sees them.
+ * Chalaiden's run screen ([RunOverlay]) in a "draw over other apps" window (or, with the Accessibility
+ * method, the service's accessibility overlay), so it sits above the phone app's USSD dialogs for the
+ * whole session and the user never sees them.
  *
  * The window is not focusable: key events (the driver's typing, ENTER, TAB) keep going to the phone
  * dialog underneath, while touches land on Chalaiden's own PIN pad and Cancel.
@@ -46,6 +48,9 @@ object RunCover {
     private var started = false
     private var view: ComposeView? = null
     private var owner: CoverOwner? = null
+
+    /** The window manager that added [view]; only that one can take it away again. */
+    private var host: WindowManager? = null
 
     /** Drives the fade; the window is added before it fades in and removed after it fades out. */
     private val shown = mutableStateOf(false)
@@ -81,9 +86,16 @@ object RunCover {
         removal?.cancel()
         removal = null
         shown.value = true
-        if (view != null || !Settings.canDrawOverlays(context)) return
+        if (view != null) return
+        // With the Accessibility method on, the cover is the service's own accessibility overlay: it
+        // needs no "display over other apps", and sits above the keyboard too. Otherwise, a plain overlay.
+        val service = ChalaidenAccessibility.instance
+        if (service == null && !Settings.canDrawOverlays(context)) return
+        val windowContext: Context = service ?: context
+        val type = if (service != null) WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+        else WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         val o = CoverOwner().also { it.start() }
-        val v = ComposeView(context).apply {
+        val v = ComposeView(windowContext).apply {
             setViewTreeLifecycleOwner(o)
             setViewTreeSavedStateRegistryOwner(o)
             setContent {
@@ -104,7 +116,7 @@ object RunCover {
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            type,
             flags,
             PixelFormat.TRANSLUCENT, // so it can fade over the activity
         ).apply {
@@ -117,8 +129,9 @@ object RunCover {
                 fitInsetsSides = 0
             }
         }
-        runCatching { context.getSystemService(WindowManager::class.java).addView(v, params) }
-            .onSuccess { view = v; owner = o }
+        val wm = windowContext.getSystemService(WindowManager::class.java)
+        runCatching { wm.addView(v, params) }
+            .onSuccess { view = v; owner = o; host = wm }
             .onFailure { o.stop() }
     }
 
@@ -127,10 +140,11 @@ object RunCover {
         removal?.cancel()
         removal = scope.launch {
             delay(FADE_MILLIS + 40L)
-            view?.let { runCatching { context.getSystemService(WindowManager::class.java).removeViewImmediate(it) } }
+            view?.let { v -> runCatching { (host ?: context.getSystemService(WindowManager::class.java)).removeViewImmediate(v) } }
             owner?.stop()
             view = null
             owner = null
+            host = null
         }
     }
 

@@ -76,6 +76,7 @@ import com.chalaiden.app.ui.components.PrimaryButton
 import com.chalaiden.app.ui.components.TextAction
 import com.chalaiden.app.ui.theme.Type
 import com.chalaiden.app.ui.theme.tokens
+import com.chalaiden.app.ussd.ChalaidenAccessibility
 import com.chalaiden.app.ussd.Dialer
 import com.chalaiden.app.ussd.Method
 import com.chalaiden.app.ussd.Prefs
@@ -90,7 +91,7 @@ private const val STEPS = 3
 
 /**
  * Setup as three pages, one thing each: phone access, the bKash SIM, and how bKash gets answered
- * (Shizuku, root or guided mode; any one is enough). It opens on the first unfinished step, or on the
+ * (guided mode, Accessibility, Shizuku or root; any one is enough). It opens on the first unfinished step, or on the
  * last when everything is done, since that is the one people come back to change.
  */
 @Composable
@@ -98,6 +99,8 @@ fun SetupScreen(
     prefs: Prefs,
     rootOk: Boolean,
     shizukuOk: Boolean,
+    /** Chalaiden's accessibility service is on (the Accessibility method). */
+    a11yOk: Boolean,
     shizuku: ShizukuAccess.Status,
     /** The way bKash gets answered now; null while none works. */
     inUse: Method?,
@@ -162,6 +165,7 @@ fun SetupScreen(
                         inUse = inUse,
                         rootOk = rootOk,
                         shizukuOk = shizukuOk,
+                        a11yOk = a11yOk,
                         shizuku = shizuku,
                         keyboardOn = keyboardOn,
                         canFloat = canFloat,
@@ -211,6 +215,18 @@ fun SetupScreen(
                         }
                     }
                     secondary = "Show me how" to { onGuide(Method.Shizuku) }
+                }
+                Method.Accessibility -> {
+                    primary = when {
+                        inUse == Method.Accessibility -> "Finish" to finish
+                        a11yOk -> "Use Accessibility" to { onChoose(Method.Accessibility) }
+                        // Chosen now, so it's in use as soon as the switch is on.
+                        else -> "Turn on in Settings" to {
+                            onChoose(Method.Accessibility)
+                            ChalaidenAccessibility.openSettings(context)
+                        }
+                    }
+                    secondary = "Show me how" to { onGuide(Method.Accessibility) }
                 }
                 Method.Root -> {
                     primary = when {
@@ -362,6 +378,7 @@ private fun WayStep(
     inUse: Method?,
     rootOk: Boolean,
     shizukuOk: Boolean,
+    a11yOk: Boolean,
     shizuku: ShizukuAccess.Status,
     keyboardOn: Boolean,
     canFloat: Boolean,
@@ -383,6 +400,19 @@ private fun WayStep(
             },
             selected = choice == Method.Guided,
         ) { onPick(Method.Guided) }
+        WayRow(
+            icon = { AccessibilityBadge() },
+            title = "Accessibility",
+            tag = "No root or Shizuku",
+            badge = badge(Method.Accessibility, inUse, a11yOk),
+            detail = if (a11yOk) {
+                "Chalaiden's accessibility service is on. It answers bKash for you, behind its own screen."
+            } else {
+                "Switch on Chalaiden in Settings › Accessibility, and it answers bKash for you. It only reads " +
+                    "the phone's USSD menu. Switch greyed out? Tap Show me how."
+            },
+            selected = choice == Method.Accessibility,
+        ) { onPick(Method.Accessibility) }
         WayRow(
             icon = { AppTile(R.drawable.shizuku_icon, 40) },
             title = "Shizuku",
@@ -513,6 +543,14 @@ private fun shizukuAction(status: ShizukuAccess.Status) = when (status) {
     ShizukuAccess.Status.NeedsPermission -> "Allow in Shizuku"
     ShizukuAccess.Status.Denied -> "Open Shizuku"
     ShizukuAccess.Status.Ready -> "Try again"
+}
+
+/** The Accessibility method's mark: Android's own accessibility figure on a tile. */
+@Composable
+private fun AccessibilityBadge() {
+    Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(tokens.raised), contentAlignment = Alignment.Center) {
+        Icon(AppIcons.Accessibility, null, tint = tokens.ink, modifier = Modifier.size(24.dp))
+    }
 }
 
 /**

@@ -381,6 +381,91 @@ fun OverlayArt() = Art(4400) { c ->
     }
 }
 
+// ---------------------------------------------------------------------------------------------------
+// Accessibility
+
+/**
+ * Chalaiden's App info: the ⋮ menu at the top is tapped, then "Allow restricted settings". Android 13+
+ * greys out an installed-from-a-file app's accessibility switch until this is done.
+ */
+@Composable
+fun RestrictedArt() = Art(4800) { c ->
+    val t = tokens
+    val menu = c.ease(0.3f, 0.38f) * (1f - c.ease(0.6f, 0.66f))
+    Box(Modifier.fillMaxSize()) {
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("App info", style = SmallBold, color = t.ink, modifier = Modifier.weight(1f))
+                Icon(AppIcons.More, null, tint = t.ink, modifier = Modifier.tap(c, 0.24f).size(16.dp))
+            }
+            Spacer(Modifier.height(14.dp))
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                ChalaidenTile(36)
+                Spacer(Modifier.height(6.dp))
+                Text("Chalaiden", style = SmallBold, color = t.ink)
+            }
+            Spacer(Modifier.height(14.dp))
+            Bars(0.9f, 0.7f, 0.8f)
+        }
+        if (menu > 0f) {
+            Box(
+                Modifier.align(Alignment.TopEnd).padding(top = 20.dp)
+                    .graphicsLayer { alpha = menu; scaleX = 0.9f + 0.1f * menu; scaleY = 0.9f + 0.1f * menu }
+                    .tap(c, 0.5f).clip(RoundedCornerShape(12.dp)).background(t.raised)
+                    .padding(horizontal = 12.dp, vertical = 9.dp),
+            ) { Text("Allow restricted settings", style = Small, color = t.ink) }
+        }
+        if (c >= 0.7f) {
+            val s = c.pop(0.7f, 0.8f)
+            Row(
+                Modifier.align(Alignment.Center).graphicsLayer { scaleX = s; scaleY = s }
+                    .clip(RoundedCornerShape(50)).background(t.raised).padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CheckDot()
+                Spacer(Modifier.width(6.dp))
+                Text("Restricted settings allowed", style = Small, color = t.ink)
+            }
+        }
+    }
+}
+
+/** Settings › Accessibility › Chalaiden: the switch goes on, and Chalaiden answers bKash by itself. */
+@Composable
+fun AccessibilityArt() = Art(4400) { c ->
+    val t = tokens
+    val on = c.ease(0.4f, 0.48f)
+    Text("Accessibility › Chalaiden", style = SmallBold, color = t.ink)
+    Spacer(Modifier.height(10.dp))
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(t.raised).padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ChalaidenTile(26)
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Use Chalaiden", style = Small, color = t.ink)
+            Text(if (on > 0.5f) "On" else "Off", style = Tiny, color = t.inkSoft)
+        }
+        Toggle(on, Modifier.tap(c, 0.38f))
+    }
+    Spacer(Modifier.height(14.dp))
+    val done = c.pop(0.58f, 0.68f)
+    if (c >= 0.58f) {
+        Row(
+            Modifier.graphicsLayer { scaleX = done; scaleY = done }
+                .clip(RoundedCornerShape(50)).background(t.raised).padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CheckDot()
+            Spacer(Modifier.width(6.dp))
+            Text("Chalaiden answers bKash for you", style = Small, color = t.ink)
+        }
+    } else {
+        Bars(0.9f, 0.7f)
+    }
+}
+
 /** bKash asks; the Chalaiden keyboard types the reply into its box by itself; Send; the card moves on. */
 @Composable
 fun AutoFillArt() = Art(5200) { c ->

@@ -53,6 +53,7 @@ import com.chalaiden.app.ui.components.TextAction
 import com.chalaiden.app.ui.components.TopBar
 import com.chalaiden.app.ui.theme.Type
 import com.chalaiden.app.ui.theme.tokens
+import com.chalaiden.app.ussd.ChalaidenAccessibility
 import com.chalaiden.app.ussd.Method
 import com.chalaiden.app.ussd.ShizukuAccess
 import kotlinx.coroutines.launch
@@ -85,6 +86,7 @@ fun MethodGuideScreen(
     shizuku: ShizukuAccess.Status,
     shizukuOk: Boolean,
     rootOk: Boolean,
+    a11yOk: Boolean,
     inUse: Method?,
     onRecheck: () -> Unit,
     onUse: (Method) -> Unit,
@@ -107,6 +109,7 @@ fun MethodGuideScreen(
         Method.Shizuku -> shizukuPages(context, install, shizuku, shizukuOk, developer, onRecheck)
         Method.Root -> rootPages(rootOk, onRecheck)
         Method.Guided -> guidedPages(context, canFloat, keyboardOn)
+        Method.Accessibility -> accessibilityPages(context, a11yOk)
     }
     // Where to be: the first step that isn't finished yet.
     val next = pages.indexOfFirst { it.done != true }.let { if (it < 0) pages.lastIndex else it }
@@ -118,11 +121,13 @@ fun MethodGuideScreen(
         Method.Root -> rootOk
         Method.Shizuku -> shizukuOk
         Method.Guided -> true
+        Method.Accessibility -> a11yOk
     }
     val name = when (method) {
         Method.Root -> "root"
         Method.Shizuku -> "Shizuku"
         Method.Guided -> "guided mode"
+        Method.Accessibility -> "Accessibility"
     }
 
     Column(Modifier.fillMaxSize().background(t.bg).systemBarsPadding()) {
@@ -131,6 +136,7 @@ fun MethodGuideScreen(
                 Method.Shizuku -> "Set up Shizuku"
                 Method.Root -> "Set up root"
                 Method.Guided -> "Guided mode"
+                Method.Accessibility -> "Set up Accessibility"
             },
             onBack,
         )
@@ -337,6 +343,42 @@ private fun guidedPages(context: Context, canFloat: Boolean, keyboardOn: Boolean
         art = { PinArt() },
     ),
 )
+
+/**
+ * Sideloaded apps get their accessibility switch greyed out on Android 13+ until "Allow restricted
+ * settings" is tapped in App info, so that comes first there. Then the switch, then what it means for
+ * the PIN and for bKash.
+ */
+private fun accessibilityPages(context: Context, on: Boolean) = buildList {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        add(GuidePage(
+            title = "Allow restricted settings",
+            body = "Android keeps accessibility switched off for apps installed from a file until you allow it. " +
+                "Open App info, tap ⋮ at the top right, then Allow restricted settings.",
+            art = { RestrictedArt() },
+            done = on.takeIf { it },
+            tip = "No ⋮ menu, or no such item? Then your phone doesn't restrict it: go on to the next step. " +
+                "On some phones the item only shows after you've tried the switch once.",
+            action = GuideAction("Open App info") { ChalaidenAccessibility.openAppInfo(context) },
+        ))
+    }
+    add(GuidePage(
+        title = "Switch on Chalaiden",
+        body = "In Settings › Accessibility, open Chalaiden and switch it on. It may be under Downloaded apps " +
+            "or Installed apps. Android warns that it can see your screen: Chalaiden only reads the phone's " +
+            "USSD menu, and only while you pay or check your balance.",
+        art = { AccessibilityArt() },
+        done = on,
+        action = GuideAction("Open Accessibility settings") { ChalaidenAccessibility.openSettings(context) },
+    ))
+    add(GuidePage(
+        title = "Your PIN, typed by you",
+        body = "You type your PIN on Chalaiden's PIN pad; it goes straight into bKash's box and Chalaiden keeps " +
+            "nothing. If the bKash app ever warns you about an accessibility service, switch Chalaiden off here " +
+            "and use guided mode or Shizuku instead.",
+        art = { PinArt() },
+    ))
+}
 
 private fun open(context: Context, action: String, data: Uri? = null) {
     runCatching { context.startActivity(Intent(action, data)) }

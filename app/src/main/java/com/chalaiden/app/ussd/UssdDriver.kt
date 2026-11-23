@@ -16,10 +16,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * Drives the system USSD dialog with root or Shizuku ([Backend]) instead of an accessibility service: it reads the dialog
- * through a [UssdScreen], feeds the text to the shared [UssdEngine] through [UssdSession], and
- * performs the engine's answers. The fast [HelperScreen] is used when it starts; otherwise the slower
- * [DumpScreen]. Either way Chalaiden's cover ([com.chalaiden.app.ui.RunCover]) hides the dialogs.
+ * Drives the system USSD dialog with root, Shizuku or Chalaiden's accessibility service ([Backend]): it
+ * reads the dialog through a [UssdScreen], feeds the text to the shared [UssdEngine] through
+ * [UssdSession], and performs the engine's answers. Root and Shizuku use the fast [HelperScreen] when it
+ * starts, otherwise the slower [DumpScreen]; the accessibility service uses [AccessibilityScreen].
+ * Either way Chalaiden's cover ([com.chalaiden.app.ui.RunCover]) hides the dialogs.
  */
 object UssdDriver {
     private const val TAG = "ChalaidenUssd"
@@ -115,29 +116,42 @@ object UssdDriver {
     }
 
     private suspend fun CoroutineScope.drive(gen: Int, prefs: Prefs, apk: String, backend: Backend, dial: suspend () -> Unit) {
-        val sh = RootShell.open(backend) ?: return fail(gen, IllegalStateException("No $backend shell"))
+        // The Accessibility method has no shell: its service reads the dialog and keeps the keyboard down.
+        val service = if (backend == Backend.Accessibility) {
+            ChalaidenAccessibility.instance ?: return fail(gen, IllegalStateException("Accessibility service is off"))
+        } else null
+        val sh = if (service == null) RootShell.open(backend) ?: return fail(gen, IllegalStateException("No $backend shell")) else null
         fun current() = gen == generation
-        if (!current()) return sh.close()
+        if (!current()) return run { sh?.close() }
         shell = sh
         // Saved before switching off, so a killed session can still put the keyboards back.
-        var keyboards = prefs.imeToRestore ?: keyboardsOff(sh)
+        var keyboards = sh?.let { prefs.imeToRestore ?: keyboardsOff(it) }
+        var keyboardHidden = false
         fun keyboardsBack() {
+            if (keyboardHidden) {
+                keyboardHidden = false
+                service?.hideKeyboard(false)
+            }
             val saved = keyboards ?: return
             keyboards = null
             // Only forget them once they are really back; otherwise the next launch retries.
-            if (runCatching { keyboardsOn(sh, saved) }.isSuccess) prefs.imeToRestore = null
+            if (sh != null && runCatching { keyboardsOn(sh, saved) }.isSuccess) prefs.imeToRestore = null
         }
         var opened: UssdScreen? = null // for the finally block
         try {
-            keyboards?.let { saved ->
+            if (sh != null) keyboards?.let { saved ->
                 prefs.imeToRestore = saved
                 sh.exec(saved.lines().joinToString("; ") { "ime disable '$it' >/dev/null 2>&1" })
             }
-            var ui: UssdScreen = HelperScreen.open(apk, backend) ?: DumpScreen(sh)
+            service?.let { it.hideKeyboard(true); keyboardHidden = true }
+            var ui: UssdScreen = when {
+                service != null -> AccessibilityScreen(service)
+                else -> HelperScreen.open(apk, backend) ?: DumpScreen(checkNotNull(sh))
+            }
             opened = ui
             if (!current()) return
             screen = ui
-            trace("$backend screen: ${ui::class.simpleName}, keyboards off: ${keyboards?.lines()?.size ?: 0}")
+            trace("$backend screen: ${ui::class.simpleName}, keyboards off: ${keyboards?.lines()?.size ?: if (keyboardHidden) "hidden" else 0}")
             sweep(ui)
             dial()
             trace("dialled")
@@ -152,11 +166,11 @@ object UssdDriver {
                 _dialogUp.value = look != null
                 // The user's keyboard comes back as soon as the session is over, not after the tail.
                 if (look == null && !UssdSession.isActive && now - lastSeenAt > QUIET_MILLIS) {
-                    if (keyboards != null) keyboardsBack()
+                    if (keyboards != null || keyboardHidden) keyboardsBack()
                     // Done and nothing on screen: drop the helper's UI connection now rather than after
                     // the tail, in case the bKash app is opened next. A late prompt is rare, and the
                     // dump fallback (a cheap focus check until one appears) still closes it.
-                    if (ui is HelperScreen) {
+                    if (ui is HelperScreen && sh != null) {
                         ui.close()
                         ui = DumpScreen(sh)
                         opened = ui
