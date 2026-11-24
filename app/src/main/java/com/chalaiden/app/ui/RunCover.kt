@@ -101,10 +101,12 @@ object RunCover {
         removal = null
         shown.value = true
         if (view != null) return
-        // A plain overlay when it's allowed: the status bar stays on top of it, as it does over the
-        // activity, so the PIN screen doesn't move when the cover takes over. Without that permission,
-        // the Accessibility method's service hosts it as an accessibility overlay instead.
-        val service = ChalaidenAccessibility.instance.takeUnless { Settings.canDrawOverlays(context) }
+        // The Accessibility method's service hosts it as an accessibility overlay whenever it's running:
+        // that layer is above every window the phone app can use. A plain overlay is not: HONOR's
+        // MagicOS puts the USSD box that asks for input in a KEYGUARD_DIALOG window, which drew over a
+        // plain cover at bKash's "Enter PIN:" (ELI-AN00, Android 16, 2026-11-24). The plain overlay is
+        // for the other methods, and for phones without the service.
+        val service = ChalaidenAccessibility.instance
         if (service == null && !Settings.canDrawOverlays(context)) return
         val windowContext: Context = service ?: context
         val type = if (service != null) WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
