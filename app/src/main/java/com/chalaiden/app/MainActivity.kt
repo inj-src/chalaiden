@@ -515,7 +515,7 @@ class MainActivity : FragmentActivity() {
                 if (RunCover.onScreen.value || !ready() || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@launch
                 val cipher = OneTap.decrypter(this@MainActivity)
                 if (cipher == null) {
-                    OneTap.pinNotice.value = if (OneTap.saved.value) "The saved PIN couldn't be opened. Type your PIN."
+                    OneTap.pinNotice.value = if (OneTap.saved.value) "The saved PIN couldn't be opened. Type your PIN. If this keeps happening, turn One Tap off and on again from the menu on Home."
                     else "The saved PIN can't be opened any more, so it was removed. Type your PIN."
                     return@launch
                 }

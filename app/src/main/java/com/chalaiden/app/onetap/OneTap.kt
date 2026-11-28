@@ -14,8 +14,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.security.GeneralSecurityException
-import java.security.InvalidKeyException
-import java.security.UnrecoverableKeyException
 import java.security.KeyStore
 import java.security.ProviderException
 import javax.crypto.Cipher
@@ -116,7 +114,6 @@ object OneTap {
             .putString(IV, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
             .apply()
         pending = null
-        prefs(context).edit().remove(FAILS).apply() // the old key's failures aren't this one's
         suspect(context, false)
         if (old != null && old != alias) runCatching { keyStore().deleteEntry(old) }
         _saved.value = true
@@ -127,9 +124,10 @@ object OneTap {
 
     /**
      * A cipher to open the saved PIN with, for the fingerprint sheet. Null when there is none, or when
-     * the phone's fingerprints changed since it was saved: then it's gone for good and is removed. Older
-     * keystores report that change as an unreadable or unusable key, so two of those in a row count as it
-     * too. Anything else (a busy keystore) leaves the PIN where it is.
+     * the phone's fingerprints changed since it was saved: then it's gone for good and is removed. Any
+     * other keystore error leaves the PIN where it is. Some (an unreadable key on older phones) may mean
+     * the same, but a keystore that is only out for now says the same thing, so the user decides: the
+     * notice points to turning One Tap off.
      */
     fun decrypter(context: Context): Cipher? {
         val iv = prefs(context).getString(IV, null) ?: return null
@@ -138,14 +136,10 @@ object OneTap {
             val key = keyStore().getKey(alias, null) as? SecretKey ?: return null.also { forget(context) }
             Cipher.getInstance(TRANSFORMATION).apply {
                 init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)))
-            }.also { prefs(context).edit().remove(FAILS).apply() }
+            }
         } catch (e: KeyPermanentlyInvalidatedException) {
             forget(context)
             null
-        } catch (e: UnrecoverableKeyException) {
-            failed(context)
-        } catch (e: InvalidKeyException) {
-            failed(context)
         } catch (e: GeneralSecurityException) {
             null
         } catch (e: ProviderException) {
@@ -153,12 +147,6 @@ object OneTap {
         }
     }
 
-    /** A key that wouldn't open: once may be a hiccup and the PIN stays; twice running, it's gone and is removed. */
-    private fun failed(context: Context): Cipher? {
-        val fails = prefs(context).getInt(FAILS, 0) + 1
-        if (fails >= 2) forget(context) else prefs(context).edit().putInt(FAILS, fails).apply()
-        return null
-    }
 
     /** After the fingerprint: the saved PIN, opened with [cipher] (from [decrypter]). */
     fun read(context: Context, cipher: Cipher): String? = runCatching {
@@ -168,7 +156,7 @@ object OneTap {
 
     /** Removes the saved PIN and its key. */
     fun forget(context: Context) {
-        prefs(context).edit().remove(PIN).remove(IV).remove(ALIAS).remove(SUSPECT).remove(FAILS).apply()
+        prefs(context).edit().remove(PIN).remove(IV).remove(ALIAS).remove(SUSPECT).apply()
         listOf(KEY_A, KEY_B).forEach { runCatching { keyStore().deleteEntry(it) } }
         _saved.value = false
         _suspect.value = false
@@ -221,5 +209,4 @@ object OneTap {
     private const val PIN = "pin"
     private const val IV = "iv"
     private const val SUSPECT = "suspect"
-    private const val FAILS = "fails"
 }
