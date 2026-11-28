@@ -1,5 +1,6 @@
 package com.chalaiden.app.ui
 
+import com.chalaiden.app.ui.components.BackButton
 import com.chalaiden.app.ui.components.FixedTextScale
 import com.chalaiden.app.ui.theme.Anek
 import androidx.compose.ui.text.font.FontWeight
@@ -306,14 +307,8 @@ fun SetupScreen(
 /** Back, on its own: the pages say what they're for, so there's no step count. */
 @Composable
 private fun SetupHeader(onBack: () -> Unit) {
-    val t = tokens
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            Modifier.size(48.dp).clip(CircleShape).background(t.raised).clickable(role = Role.Button, onClickLabel = "Back", onClick = onBack),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(AppIcons.Back, contentDescription = "Back", tint = t.ink, modifier = Modifier.size(22.dp))
-        }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        BackButton(onBack)
     }
 }
 

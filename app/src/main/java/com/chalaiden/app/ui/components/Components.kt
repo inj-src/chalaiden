@@ -529,17 +529,26 @@ fun TextAction(label: String, modifier: Modifier = Modifier, color: Color = toke
 @Composable
 fun TopBar(title: String, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val t = tokens
-    Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        val press = remember { MutableInteractionSource() }
-        Box(
-            Modifier.size(48.dp).pressScale(press, 0.94f).clip(CircleShape).background(t.raised)
-                .clickable(interactionSource = press, indication = LocalIndication.current, role = Role.Button, onClickLabel = "Back", onClick = onBack),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(AppIcons.Back, contentDescription = "Back", tint = t.ink, modifier = Modifier.size(22.dp))
-        }
-        Spacer(Modifier.width(14.dp))
+    Row(modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        BackButton(onBack)
+        Spacer(Modifier.width(8.dp))
         Text(title, style = Type.title, color = t.ink)
+    }
+}
+
+/** Back, at the top left: a small 36dp disc, so it doesn't outweigh the title, on a full 48dp target. */
+@Composable
+fun BackButton(onBack: () -> Unit, modifier: Modifier = Modifier) {
+    val t = tokens
+    val press = remember { MutableInteractionSource() }
+    Box(
+        modifier.size(48.dp).pressScale(press, 0.94f).clip(CircleShape)
+            .clickable(interactionSource = press, indication = LocalIndication.current, role = Role.Button, onClickLabel = "Back", onClick = onBack),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.size(36.dp).clip(CircleShape).background(t.raised), contentAlignment = Alignment.Center) {
+            Icon(AppIcons.Back, contentDescription = "Back", tint = t.ink, modifier = Modifier.size(18.dp))
+        }
     }
 }
 
