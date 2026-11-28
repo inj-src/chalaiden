@@ -198,29 +198,16 @@ private fun PinStep(flow: UssdFlow) {
             verticalArrangement = Arrangement.Bottom,
         ) {
             PinDots(pin.length, PIN_LENGTH, Modifier.align(Alignment.CenterHorizontally))
-            Spacer(Modifier.height(16.dp))
             // With One Tap on, the phone's fingerprint sheet opens over this screen by itself; "Use PIN" there
-            // leaves this pad. The sheet can be brought back from here while nothing is dialled yet.
+            // leaves this pad. The fingerprint key on the pad brings the sheet back while nothing is dialled yet,
+            // and not while bKash's last answer to the saved PIN was "wrong": it would only send it again.
             val oneTap by OneTap.saved.collectAsState()
             val suspect by OneTap.suspect.collectAsState()
             val cold = UssdSession.current.collectAsState().value?.state == RunState.Ready
-            // The pill and the prompt share one height, so the keys don't resize on the first digit.
-            Box(Modifier.fillMaxWidth().heightIn(min = 48.dp), contentAlignment = Alignment.Center) {
-              when {
-                // Not while bKash's last answer to the saved PIN was "wrong": it would only send it again.
-                oneTap && !suspect && cold && pin.isEmpty() -> Row(
-                    Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(50)).background(t.raised)
-                        .clickable(role = Role.Button) { OneTap.pinNotice.value = null; OneTap.asks.tryEmit(Unit) }
-                        .padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(AppIcons.Fingerprint, contentDescription = null, tint = t.ink, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Use fingerprint", style = Type.label, color = t.ink)
-                }
-                else -> Text("Enter your PIN", style = Type.label, color = t.inkSoft, maxLines = 1)
-              }
-            }
+            Text(
+                "Enter your PIN", style = Type.label, color = t.inkSoft, maxLines = 1,
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 14.dp),
+            )
             Keypad(
                 // The notice stays while typing: clearing it would resize the keys on the first press.
                 onKey = {
@@ -228,8 +215,12 @@ private fun PinStep(flow: UssdFlow) {
                     UssdSession.warmUp()
                 },
                 onBackspace = { PinEntry.pin = PinEntry.pin.dropLast(1) },
-                modifier = if (compact) Modifier.padding(top = 8.dp) else Modifier.weight(1f, fill = false).padding(top = 8.dp),
+                modifier = if (compact) Modifier.padding(top = 16.dp) else Modifier.weight(1f, fill = false).padding(top = 16.dp),
                 keyHeight = if (compact) 48.dp else null,
+                // Gone with the first digit, so the key can't be hit by a thumb mid-PIN.
+                onFingerprint = if (oneTap && !suspect && cold && pin.isEmpty()) {
+                    { OneTap.pinNotice.value = null; OneTap.asks.tryEmit(Unit) }
+                } else null,
             )
         }
         }

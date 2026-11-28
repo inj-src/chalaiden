@@ -236,7 +236,14 @@ fun Chip(icon: ImageVector, label: String, onClick: () -> Unit) {
  * to 40dp to fit, sitting at the bottom of that space; otherwise they are [keyHeight] tall.
  */
 @Composable
-fun Keypad(onKey: (Char) -> Unit, onBackspace: () -> Unit, modifier: Modifier = Modifier, keyHeight: Dp? = null) {
+fun Keypad(
+    onKey: (Char) -> Unit,
+    onBackspace: () -> Unit,
+    modifier: Modifier = Modifier,
+    keyHeight: Dp? = null,
+    /** With One Tap: the empty key left of 0 becomes a fingerprint key, as on a phone's lock screen. */
+    onFingerprint: (() -> Unit)? = null,
+) {
     val haptics = LocalHapticFeedback.current
     val tap = { c: Char -> haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onKey(c) }
     BoxWithConstraints(modifier.fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
@@ -249,7 +256,11 @@ fun Keypad(onKey: (Char) -> Unit, onBackspace: () -> Unit, modifier: Modifier = 
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Spacer(Modifier.weight(1f))
+                if (onFingerprint != null) {
+                    Key("", Modifier.weight(1f), h, description = "Use fingerprint", icon = AppIcons.Fingerprint) { onFingerprint() }
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
                 Key("0", Modifier.weight(1f), h) { tap('0') }
                 Key("", Modifier.weight(1f), h, description = "Delete", icon = AppIcons.Backspace) { onBackspace() }
             }
