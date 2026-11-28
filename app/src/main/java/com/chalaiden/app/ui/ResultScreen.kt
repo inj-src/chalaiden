@@ -36,7 +36,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -69,7 +68,6 @@ import com.chalaiden.app.ui.components.PrimaryButton
 import com.chalaiden.app.ui.components.TextAction
 import com.chalaiden.app.ui.theme.Type
 import com.chalaiden.app.ui.theme.tokens
-import com.chalaiden.app.onetap.OneTap
 import com.chalaiden.app.ussd.FlowKind
 import com.chalaiden.app.ussd.Flows
 import com.chalaiden.app.ussd.Outcome
@@ -171,11 +169,6 @@ private fun ResultBody(
                         Text(caption, style = Type.label, color = soft)
                         Text(words, style = Type.body, color = fg)
                     }
-                }
-                // The saved One Tap PIN was the wrong one, and has been removed.
-                OneTap.resultNotice.collectAsState().value?.let {
-                    Spacer(Modifier.height(12.dp))
-                    Text(it, style = Type.body, color = fg)
                 }
                 amount?.let {
                     Spacer(Modifier.height(20.dp))

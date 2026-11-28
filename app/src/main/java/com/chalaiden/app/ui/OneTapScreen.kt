@@ -77,16 +77,17 @@ private const val PIN_DIGITS = 5
 /**
  * One Tap, from Home's ⋮ menu: save the bKash PIN locked to the fingerprint, change it, or turn it off.
  * [guided]: the phone uses Guided mode, where One Tap can't help (the user types into bKash's own box).
+ * [change]: open on typing a new PIN, after bKash refused the saved one.
  */
 @Composable
-fun OneTapScreen(guided: Boolean, onBack: () -> Unit) {
+fun OneTapScreen(guided: Boolean, change: Boolean, onBack: () -> Unit) {
     val t = tokens
     val context = LocalContext.current
     val saved by OneTap.saved.collectAsState()
     var readiness by remember { mutableStateOf(OneTap.readiness(context)) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { readiness = OneTap.readiness(context) } // back from Settings
     // Typing the PIN to save. Plain remember, never saveable: the PIN must not reach the saved state.
-    var entering by remember { mutableStateOf(false) }
+    var entering by remember { mutableStateOf(change && OneTap.saved.value) }
     BackHandler(enabled = entering) { entering = false }
 
     Column(Modifier.fillMaxSize().background(t.bg).systemBarsPadding()) {

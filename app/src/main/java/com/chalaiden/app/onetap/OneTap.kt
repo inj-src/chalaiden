@@ -48,8 +48,8 @@ object OneTap {
     /** A line for the PIN screen when the fingerprint didn't work ("Too many tries…"). */
     val pinNotice = MutableStateFlow<String?>(null)
 
-    /** A line for the result screen after a saved PIN turned out wrong and was removed. */
-    val resultNotice = MutableStateFlow<String?>(null)
+    /** bKash refused the PIN One Tap sent; the result screen asks the user what to do with it. */
+    val wrongPin = MutableStateFlow(false)
 
     /** This run's PIN came from One Tap, so a "wrong PIN" from bKash means the saved one is wrong. */
     @Volatile var usedThisRun = false
@@ -141,15 +141,13 @@ object OneTap {
     }
 
     /**
-     * bKash's answer says the PIN was wrong. Only then is a saved PIN removed: any other refusal
-     * ("Insufficient balance") says nothing about the PIN.
+     * bKash's answer says the PIN was wrong: "The Mobile PIN is invalid." (*247#, 2026-11). Only then
+     * is the user asked about the saved PIN; any other refusal ("Insufficient balance") says nothing
+     * about it. Looser wordings are matched too, in case bKash rephrases.
      */
-    fun isWrongPin(text: String): Boolean {
-        // TODO(user): bKash's exact wording for a wrong PIN.
-        return WRONG_PIN.containsMatchIn(text)
-    }
+    fun isWrongPin(text: String): Boolean = WRONG_PIN.containsMatchIn(text)
 
-    private val WRONG_PIN = Regex("""\b(wrong|invalid|incorrect)\s+pin\b|\bpin\b.{0,20}\b(wrong|invalid|incorrect|mismatch)""", RegexOption.IGNORE_CASE)
+    private val WRONG_PIN = Regex("""\bpin\b.{0,20}\b(wrong|invalid|incorrect|mismatch)|\b(wrong|invalid|incorrect)\s+(mobile\s+)?pin\b""", RegexOption.IGNORE_CASE)
 
     /**
      * Best effort: Android has no public way to ask where the sensor is. Phones built on AOSP's config
