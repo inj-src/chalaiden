@@ -75,13 +75,12 @@ object AppIcons {
         "M6.8 9.7H17",
     )
 
-    /** A banknote dropping into an open hand: cash handed over by an agent. */
+    /** Two banknotes, one behind the other: plain cash, from an agent. */
     val CashOut = svg(
         "cash-out",
-        "M7 3.5h11a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2z",
-        "M11.1 7.5a1.4 1.4 0 1 0 2.8 0a1.4 1.4 0 1 0-2.8 0",
-        "M2.5 14.5h3l4.25 1.5H13a1.6 1.6 0 0 1 0 3.2H9.5",
-        "M13.3 18.4l4.7-2.6a1.6 1.6 0 0 1 2 2.4l-5.8 3.3H2.5",
+        "M4.5 8.5h12a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-12a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z",
+        "M9 14a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0",
+        "M6 5.5h13.5a2 2 0 0 1 2 2V15",
     )
 
     /** A SIM card: rounded, clipped corner, chip. */
