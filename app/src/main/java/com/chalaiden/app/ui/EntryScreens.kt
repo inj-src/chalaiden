@@ -213,10 +213,11 @@ fun AmountScreen(kind: FlowKind, number: String, groups: List<Int>?, onPay: (amo
                 val amountSize = (if (shown.length > 6) 64.sp else 76.sp).capScale()
                 // The keypad types here, so it gets a caret like any field: before the grey 0 while empty
                 // (the 0 is a hint, not a digit), after the figures once typing starts.
-                val caretHeight = with(LocalDensity.current) { amountSize.toDp() } * 0.72f
+                // Measured on the amount face: figures stand 0.75 of the size tall, on a baseline 0.29 above the line's foot.
+                val caretHeight = with(LocalDensity.current) { amountSize.toDp() } * 0.75f
                 val caret = @Composable {
                     key(amount) {
-                        BlinkingCaret(caretHeight, Modifier.padding(horizontal = 4.dp).padding(bottom = caretHeight * 0.2f), width = 3.dp)
+                        BlinkingCaret(caretHeight, Modifier.padding(horizontal = 4.dp).padding(bottom = caretHeight * 0.39f), width = 3.dp)
                     }
                 }
                 Row(verticalAlignment = Alignment.Bottom) {

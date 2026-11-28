@@ -172,16 +172,11 @@ private fun PinStep(flow: UssdFlow) {
         // and sits on the hold button. The details scroll and the keys shrink (to 40dp) before "Hold to pay"
         // is pushed off: at 200% text on a small phone all of it must still be reachable.
         BoxWithConstraints(Modifier.weight(1f)) {
-        val note = when (flow.kind) {
-            FlowKind.CashOut -> "bKash adds its cash out charge to this."
-            FlowKind.Balance -> "Enter your PIN to see your balance."
-            else -> null
-        }
         val reference = flow.reference?.takeIf { !Flows.isDefaultReference(it) }
         // Why the fingerprint didn't work. In with the details, so it shares their capped, scrolling room
         // instead of taking more from the keys; it stays while typing, so the keys never resize mid-PIN.
         val notice by OneTap.pinNotice.collectAsState()
-        val details = reference != null || note != null || notice != null
+        val details = reference != null || notice != null
         // Room for everything with the keys at their 40dp floor, the details at their 120dp cap. Short of
         // that (a small window, a notice), it all scrolls above the button, with 48dp keys.
         val compact = maxHeight < (if (details) 460.dp else 316.dp)
@@ -190,7 +185,6 @@ private fun PinStep(flow: UssdFlow) {
             Column(Modifier.heightIn(max = 120.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 // The payment's own details first: what is being paid matters more than why the fingerprint didn't.
                 reference?.let { DetailRow("Reference", it) }
-                note?.let { Text(it, style = Type.body, color = t.inkSoft) }
                 notice?.let {
                     Text(it, style = Type.body, color = t.ink, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                 }
@@ -204,7 +198,7 @@ private fun PinStep(flow: UssdFlow) {
         val oneTap by OneTap.saved.collectAsState()
         val suspect by OneTap.suspect.collectAsState()
         val cold = UssdSession.current.collectAsState().value?.state == RunState.Ready
-        // The pill and the lock line share one height, so the keys don't resize on the first digit.
+        // The pill and the prompt share one height, so the keys don't resize on the first digit.
         Box(Modifier.fillMaxWidth().heightIn(min = 48.dp), contentAlignment = Alignment.Center) {
           when {
             // Not while bKash's last answer to the saved PIN was "wrong": it would only send it again.
@@ -218,14 +212,7 @@ private fun PinStep(flow: UssdFlow) {
                 Spacer(Modifier.width(8.dp))
                 Text("Use fingerprint", style = Type.label, color = t.ink)
             }
-            else -> Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(AppIcons.Lock, contentDescription = null, tint = t.inkSoft, modifier = Modifier.size(14.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    if (oneTap) "Sent only to bKash." else "Sent only to bKash. Never saved.",
-                    style = Type.label.copy(fontSize = 13.sp), color = t.inkSoft, maxLines = 1,
-                )
-            }
+            else -> Text("Enter your PIN", style = Type.label, color = t.inkSoft, maxLines = 1)
           }
         }
         Keypad(
