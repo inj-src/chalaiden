@@ -61,6 +61,7 @@ import com.chalaiden.app.ui.theme.tokens
 import com.chalaiden.app.ui.ScanScreen
 import com.chalaiden.app.ui.SetupScreen
 import com.chalaiden.app.ui.MethodGuideScreen
+import com.chalaiden.app.ui.AboutScreen
 import com.chalaiden.app.ui.theme.ChalaidenTheme
 import com.chalaiden.app.vendor.PhoneQuirks
 import com.chalaiden.app.ussd.Backend
@@ -90,6 +91,7 @@ private sealed interface Screen {
     data class Setup(val then: UssdFlow?) : Screen
     /** Step-by-step set-up for one way of answering bKash, opened from Setup. */
     data class MethodGuide(val method: Method) : Screen
+    data object About : Screen
 }
 
 class MainActivity : ComponentActivity() {
@@ -489,6 +491,7 @@ class MainActivity : ComponentActivity() {
                 onCashOut = { push(Screen.Number(FlowKind.CashOut, "", null)) },
                 onBalance = { start(Flows.balance()) },
                 onSetup = { push(Screen.Setup(then = null)) },
+                onAbout = { push(Screen.About) },
                 design = prefs.homeDesign,
                 onDesign = { prefs.homeDesign = it },
               )
@@ -563,6 +566,7 @@ class MainActivity : ComponentActivity() {
                 onUse = { prefs.method = it; checkSetup(); pop() },
                 onBack = ::pop,
             )
+            Screen.About -> AboutScreen(onBack = ::pop)
         }
     }
 

@@ -113,6 +113,7 @@ fun HomeScreen(
     onCashOut: () -> Unit,
     onBalance: () -> Unit,
     onSetup: () -> Unit,
+    onAbout: () -> Unit = {},
     keyboardOff: Boolean = false,
     onFixKeyboard: () -> Unit = {},
     /** Which of the [HomeDesign]s is up top, and where a swipe to another one is kept. */
@@ -128,7 +129,7 @@ fun HomeScreen(
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
             Column {
                 Box(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 20.dp)) {
-                    HomeMenu(onSetup, Modifier.align(Alignment.CenterEnd).offset(x = 12.dp))
+                    HomeMenu(onSetup, onAbout, Modifier.align(Alignment.CenterEnd).offset(x = 12.dp))
                 }
                 // The brand comes in more than one design; a swipe left or right changes it. Edge to edge, so a
                 // design slides off the screen rather than into the margin.
@@ -478,9 +479,9 @@ private fun carrierOf(sim: Sim): String? = sim.carrier.takeIf { it.isNotBlank() 
 
 private fun simName(sim: Sim) = listOfNotNull("SIM ${sim.slot + 1}", carrierOf(sim)).joinToString(", ")
 
-/** The ⋮ button in Home's top-right corner and its menu. Setup is always one tap away from here. */
+/** The ⋮ button in Home's top-right corner and its menu: Setup (always one tap away from here) and About. */
 @Composable
-private fun HomeMenu(onSetup: () -> Unit, modifier: Modifier = Modifier) {
+private fun HomeMenu(onSetup: () -> Unit, onAbout: () -> Unit, modifier: Modifier = Modifier) {
     val t = tokens
     var open by remember { mutableStateOf(false) }
     Box(modifier) {
@@ -502,6 +503,11 @@ private fun HomeMenu(onSetup: () -> Unit, modifier: Modifier = Modifier) {
             DropdownMenuItem(
                 text = { Text("Change method", style = Type.body, color = t.ink) },
                 onClick = { open = false; onSetup() },
+                modifier = Modifier.widthIn(min = 220.dp).heightIn(min = 48.dp),
+            )
+            DropdownMenuItem(
+                text = { Text("About", style = Type.body, color = t.ink) },
+                onClick = { open = false; onAbout() },
                 modifier = Modifier.widthIn(min = 220.dp).heightIn(min = 48.dp),
             )
         }
