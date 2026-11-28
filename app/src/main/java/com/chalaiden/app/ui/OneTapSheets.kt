@@ -35,6 +35,7 @@ import com.chalaiden.app.ui.components.PrimaryButton
 import com.chalaiden.app.ui.components.TextAction
 import com.chalaiden.app.ui.theme.Type
 import com.chalaiden.app.ui.theme.tokens
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -92,7 +93,9 @@ private fun ChoiceSheet(
             try {
                 sheet.hide()
             } finally {
-                then()
+                // A drag can cut the hide short, and the choice still stands; a sheet that left the screen
+                // with its scope (another screen arrived) acts for nothing.
+                if (isActive) then()
             }
         }
     }

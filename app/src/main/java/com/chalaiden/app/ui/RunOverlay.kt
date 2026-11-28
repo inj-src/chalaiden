@@ -189,19 +189,25 @@ private fun PinStep(flow: UssdFlow) {
         // leaves this pad. The sheet can be brought back from here while nothing is dialled yet.
         val oneTap by OneTap.saved.collectAsState()
         val notice by OneTap.pinNotice.collectAsState()
+        val suspect by OneTap.suspect.collectAsState()
         val cold = UssdSession.current.collectAsState().value?.state == RunState.Ready
+        // The notice and the pill or lock line keep one height between them, notice or not, so the keys
+        // never resize when one appears or clears on the first digit. With One Tap on, room for two lines.
+        Column(
+            Modifier.fillMaxWidth().heightIn(min = if (oneTap) 84.dp else 48.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
+        ) {
         // Why the fingerprint didn't work, read out as it appears.
         notice?.let {
             Text(
                 it, style = Type.label.copy(fontSize = 13.sp), color = t.inkSoft, textAlign = TextAlign.Center,
-                modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 4.dp)
-                    .semantics { liveRegion = LiveRegionMode.Polite },
+                modifier = Modifier.padding(bottom = 4.dp).semantics { liveRegion = LiveRegionMode.Polite },
             )
         }
-        // One height for the pill and the lock line, so the keypad doesn't jump on the first digit.
         Box(Modifier.fillMaxWidth().heightIn(min = 48.dp), contentAlignment = Alignment.Center) {
           when {
-            oneTap && cold && pin.isEmpty() -> Row(
+            // Not while bKash's last answer to the saved PIN was "wrong": it would only send it again.
+            oneTap && !suspect && cold && pin.isEmpty() -> Row(
                 Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(50)).background(t.raised)
                     .clickable(role = Role.Button) { OneTap.pinNotice.value = null; OneTap.asks.tryEmit(Unit) }
                     .padding(horizontal = 16.dp),
@@ -220,6 +226,7 @@ private fun PinStep(flow: UssdFlow) {
                 )
             }
           }
+        }
         }
         Keypad(
             onKey = {

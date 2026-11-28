@@ -21,6 +21,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -58,7 +59,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.chalaiden.app.ui.components.capScale
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -88,25 +91,27 @@ fun OneTapScreen(guided: Boolean, change: Boolean, onBack: () -> Unit) {
     val context = LocalContext.current
     val saved by OneTap.saved.collectAsState()
     var readiness by remember { mutableStateOf(OneTap.readiness(context)) }
+    // Typing the PIN to save. Plain remember, never saveable: the PIN must not reach the saved state.
+    var entering by remember { mutableStateOf(change && OneTap.saved.value && readiness == OneTap.Readiness.Ready) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         readiness = OneTap.readiness(context) // back from Settings
         // All fingerprints removed: Android has destroyed the key, so the saved PIN can never open again.
         if (readiness == OneTap.Readiness.NoneEnrolled && OneTap.saved.value) OneTap.forget(context)
+        if (readiness != OneTap.Readiness.Ready) entering = false // nothing to lock a new PIN with
     }
-    // Typing the PIN to save. Plain remember, never saveable: the PIN must not reach the saved state.
-    var entering by remember { mutableStateOf(change && OneTap.saved.value) }
     BackHandler(enabled = entering) { entering = false }
 
     Column(Modifier.fillMaxSize().background(t.bg).systemBarsPadding()) {
         TopBar("One Tap", onBack = { if (entering) entering = false else onBack() })
         when {
-            entering -> SavePin(onSaved = { entering = false })
-            saved -> OnState(onChange = { entering = true }, onTurnOff = { OneTap.forget(context) }, guided = guided)
+            entering && readiness == OneTap.Readiness.Ready -> SavePin(onSaved = { entering = false })
             readiness == OneTap.Readiness.NoneEnrolled -> Blocked(
                 "Add a fingerprint first",
                 "One Tap uses your phone's fingerprint lock. Add a fingerprint in Settings, then come back here.",
                 action = "Open Settings" to { openEnroll(context) },
             )
+            // Still on when the sensor is out for now, so it can be turned off.
+            saved -> OnState(onChange = { entering = true }, onTurnOff = { OneTap.forget(context) }, guided = guided)
             readiness == OneTap.Readiness.Unavailable -> Blocked(
                 "One Tap can't work on this phone",
                 "It needs a fingerprint sensor that Android trusts for payments. You can keep typing your PIN.",
@@ -155,10 +160,12 @@ private fun OnState(onChange: () -> Unit, onTurnOff: () -> Unit, guided: Boolean
         Spacer(Modifier.height(24.dp))
         Text("One Tap is on", style = Type.display, color = t.ink)
         Spacer(Modifier.height(10.dp))
+        val suspect by OneTap.suspect.collectAsState()
         Text(
-            "Paying, sending, cashing out and checking your balance ask for your fingerprint. " +
+            if (suspect) "bKash refused this saved PIN last time, so Chalaiden asks you to type it until you change it."
+            else "Paying, sending, cashing out and checking your balance ask for your fingerprint. " +
                 "Tap Use PIN in that box to type it instead.",
-            style = Type.body, color = t.inkSoft,
+            style = Type.body, color = if (suspect) t.error else t.inkSoft,
         )
         if (guided) {
             Spacer(Modifier.height(16.dp))
@@ -205,16 +212,20 @@ private fun SavePin(onSaved: () -> Unit) {
             }
         }
     }
-    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+    // On a short window at a large font size the keys can't shrink enough: then it all scrolls instead.
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val compact = maxHeight < 560.dp
+    Column(Modifier.fillMaxSize().then(if (compact) Modifier.verticalScroll(rememberScrollState()) else Modifier).padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(8.dp))
-        Text("Enter your bKash PIN", style = Type.display.copy(fontSize = 26.sp, lineHeight = 31.sp), color = t.ink, maxLines = 2)
+        Text("Enter your bKash PIN", style = Type.display.copy(fontSize = 26.sp.capScale(), lineHeight = 31.sp.capScale()), color = t.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.height(8.dp))
         // Capped and scrolling, so a large font size can't squeeze the keypad.
         Column(Modifier.heightIn(max = 96.dp).verticalScroll(rememberScrollState())) {
             Text(
                 problem ?: "It's locked to your fingerprint. If bKash ever says it's wrong, Chalaiden asks you what to do with it.",
                 style = Type.label.copy(lineHeight = 20.sp), color = if (problem != null) t.error else t.inkSoft,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                // Only a problem is read out as it appears, not the hint coming back on the next digit.
+                modifier = if (problem != null) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier,
             )
         }
         Spacer(Modifier.height(24.dp))
@@ -222,10 +233,12 @@ private fun SavePin(onSaved: () -> Unit) {
         Keypad(
             onKey = { if (pin.length < PIN_DIGITS) pin += it; problem = null },
             onBackspace = { pin = pin.dropLast(1) },
-            modifier = Modifier.weight(1f).padding(top = 16.dp),
+            modifier = if (compact) Modifier.padding(top = 16.dp) else Modifier.weight(1f).padding(top = 16.dp),
+            keyHeight = if (compact) 48.dp else null,
         )
         Spacer(Modifier.height(12.dp))
         PrimaryButton("Save PIN", enabled = pin.length == PIN_DIGITS && !asking, modifier = Modifier.padding(bottom = 12.dp)) { save() }
+    }
     }
 }
 
