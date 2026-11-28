@@ -25,6 +25,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.heightIn
+import com.chalaiden.app.onetap.OneTap
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.clickable
 import com.chalaiden.app.ui.components.AppIcons
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -181,13 +185,37 @@ private fun PinStep(flow: UssdFlow) {
         Spacer(Modifier.height(if (reference != null || note != null) 24.dp else 8.dp))
         PinDots(pin.length, PIN_LENGTH, Modifier.align(Alignment.CenterHorizontally))
         Spacer(Modifier.height(16.dp))
-        Row(Modifier.align(Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-            Icon(AppIcons.Lock, contentDescription = null, tint = t.inkSoft, modifier = Modifier.size(14.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Goes only to bKash. Never saved.", style = Type.label.copy(fontSize = 13.sp), color = t.inkSoft, maxLines = 1)
+        // With One Tap on, the phone's fingerprint sheet opens over this screen by itself; "Use PIN" there
+        // leaves this pad. The sheet can be brought back from here while nothing is dialled yet.
+        val oneTap by OneTap.saved.collectAsState()
+        val notice by OneTap.pinNotice.collectAsState()
+        val cold = UssdSession.current.collectAsState().value?.state == RunState.Ready
+        when {
+            notice != null -> Text(
+                notice!!, style = Type.label.copy(fontSize = 13.sp), color = t.inkSoft, textAlign = TextAlign.Center,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            )
+            oneTap && cold && pin.isEmpty() -> Row(
+                Modifier.align(Alignment.CenterHorizontally).heightIn(min = 48.dp).clip(RoundedCornerShape(50))
+                    .clickable(role = Role.Button) { OneTap.asks.tryEmit(Unit) }.padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(AppIcons.Fingerprint, contentDescription = null, tint = t.ink, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Use fingerprint", style = Type.label, color = t.ink)
+            }
+            else -> Row(Modifier.align(Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+                Icon(AppIcons.Lock, contentDescription = null, tint = t.inkSoft, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    if (oneTap) "Goes only to bKash." else "Goes only to bKash. Never saved.",
+                    style = Type.label.copy(fontSize = 13.sp), color = t.inkSoft, maxLines = 1,
+                )
+            }
         }
         Keypad(
             onKey = {
+                OneTap.pinNotice.value = null
                 if (PinEntry.pin.length < PIN_LENGTH) PinEntry.pin += it
                 UssdSession.warmUp()
             },

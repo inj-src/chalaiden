@@ -41,6 +41,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import com.chalaiden.app.onetap.OneTap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
@@ -79,8 +80,9 @@ object RunCover {
         val scope = MainScope()
         scope.launch {
             // Up for the session, and after it until the phone's last dialog has actually closed.
-            combine(UssdSession.current, UssdDriver.dialogUp) { snap, dialogUp ->
-                (snap != null && snap.state !is RunState.Finished) || dialogUp
+            // Down while One Tap's fingerprint sheet is up: this layer sits above it and would hide it.
+            combine(UssdSession.current, UssdDriver.dialogUp, OneTap.prompting) { snap, dialogUp, prompting ->
+                ((snap != null && snap.state !is RunState.Finished) || dialogUp) && !prompting
             }
                 .distinctUntilChanged()
                 .collectLatest { running ->

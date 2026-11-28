@@ -3,7 +3,7 @@ package com.chalaiden.app
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.SystemBarStyle
@@ -82,6 +82,10 @@ import com.chalaiden.app.ussd.UssdDriver
 import com.chalaiden.app.ussd.RunState
 import com.chalaiden.app.ussd.UssdFlow
 import com.chalaiden.app.ussd.UssdSession
+import com.chalaiden.app.ui.OneTapScreen
+import com.chalaiden.app.onetap.askFingerprint
+import com.chalaiden.app.onetap.Touch
+import com.chalaiden.app.onetap.OneTap
 
 private sealed interface Screen {
     data object Home : Screen
@@ -96,9 +100,11 @@ private sealed interface Screen {
     data class MethodGuide(val method: Method) : Screen
     data object About : Screen
     data object Updates : Screen
+    data object OneTap : Screen
 }
 
-class MainActivity : ComponentActivity() {
+// A FragmentActivity because One Tap's fingerprint sheet (androidx BiometricPrompt) is hosted by one.
+class MainActivity : FragmentActivity() {
     private val stack = mutableStateListOf<Screen>(Screen.Home)
     private val prefs by lazy { Prefs(this) }
 
@@ -153,6 +159,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT), SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT))
         RunCover.attach(this)
+        OneTap.init(this)
         GuideSession.bind(this)
         GuideCover.attach(this)
         // "Hold to pay" is pressed on the cover, but only a foreground activity can dial *247#.
@@ -423,8 +430,68 @@ class MainActivity : ComponentActivity() {
     /** Shows the PIN screen. Nothing is dialled until "Hold to pay" is pressed (see [drive]). */
     private fun run(flow: UssdFlow) {
         PinEntry.reset()
+        askedFor = null
+        OneTap.usedThisRun = false
+        OneTap.pinNotice.value = null
+        OneTap.resultNotice.value = null
         UssdSession.prepare(flow)
         push(Screen.Running)
+    }
+
+    /** The run One Tap's sheet has opened for by itself; it opens once per run, then only when asked. */
+    private var askedFor: UssdFlow? = null
+
+    /**
+     * One Tap: the phone's fingerprint sheet, naming what it's for. A match opens the saved PIN and sends
+     * it, as "Hold to pay" would; "Use PIN" leaves the PIN pad. Only before anything is dialled: then this
+     * activity is in front, and hiding the cover for the sheet shows nothing of bKash's.
+     */
+    private fun payWithFingerprint(flow: UssdFlow, settle: Long) {
+        if (OneTap.prompting.value || !OneTap.saved.value) return
+        val ready = { UssdSession.current.value?.let { it.flow == flow && !it.confirmed && it.state == RunState.Ready } == true }
+        if (!ready()) return
+        OneTap.prompting.value = true // keeps the cover down from now on
+        lifecycleScope.launch {
+            delay(settle) // the PIN screen sliding in, or the cover fading out
+            val cipher = OneTap.decrypter(this@MainActivity)
+            if (cipher == null || !ready()) {
+                OneTap.prompting.value = false
+                if (cipher == null) OneTap.pinNotice.value = "Your phone's fingerprints changed, so the saved PIN was removed. Type your PIN."
+                return@launch
+            }
+            val amount = flow.amount?.toLongOrNull()?.let { "%,d TK".format(it) }
+            val title = when (flow.kind) {
+                FlowKind.Payment -> "Pay $amount?"
+                FlowKind.SendMoney -> "Send $amount?"
+                FlowKind.CashOut -> "Cash out $amount?"
+                FlowKind.Balance -> "Check your balance?"
+            }
+            askFingerprint(
+                title = title,
+                subtitle = flow.recipient?.let { "To $it" },
+                cancel = "Use PIN",
+                cipher = cipher,
+                confirm = flow.kind != FlowKind.Balance,
+            ) { touch ->
+                OneTap.prompting.value = false
+                when (touch) {
+                    is Touch.Unlocked -> {
+                        val pin = OneTap.read(this@MainActivity, touch.cipher)
+                        if (pin == null) {
+                            OneTap.pinNotice.value = "The saved PIN couldn't be opened. Type your PIN."
+                        } else if (ready()) {
+                            OneTap.usedThisRun = true
+                            PinEntry.reset()
+                            // As the hold does: start walking the menu, and send the PIN once bKash's summary matches.
+                            UssdSession.warmUp()
+                            UssdSession.confirm(pin)
+                        }
+                    }
+                    Touch.Declined -> Unit
+                    is Touch.Failed -> OneTap.pinNotice.value = "${touch.message.trimEnd('.')}. Type your PIN."
+                }
+            }
+        }
     }
 
     private fun drive(flow: UssdFlow) {
@@ -453,12 +520,30 @@ class MainActivity : ComponentActivity() {
             val state = s.state
             if (state is RunState.Finished && stack.lastOrNull() == Screen.Running) {
                 PinEntry.reset() // digits typed before a failure while walking the menu
+                // bKash refused the saved One Tap PIN: remove it, or every payment would try it again.
+                val o = state.outcome
+                if (OneTap.usedThisRun && o is Outcome.Failed && o.pinSent && OneTap.isWrongPin(o.message)) {
+                    OneTap.forget(this@MainActivity)
+                    OneTap.resultNotice.value = "That was your saved One Tap PIN, so Chalaiden removed it. Save the right one in ⋮ → One Tap."
+                }
                 showResult(s.flow, state.outcome)
                 if (state.outcome is Outcome.Success && s.flow.kind == FlowKind.Payment) prefs.scanLearned = true
                 UssdSession.clear()
             }
         }
         @Suppress("UNUSED_VARIABLE") val tick = setupTick // re-read readiness after root or Shizuku fixes
+        // One Tap: the fingerprint sheet opens by itself as the PIN screen comes up, once per run.
+        LaunchedEffect(session?.flow, stack.lastOrNull()) {
+            val s = session ?: return@LaunchedEffect
+            if (stack.lastOrNull() == Screen.Running && askedFor !== s.flow && OneTap.saved.value) {
+                askedFor = s.flow
+                payWithFingerprint(s.flow, settle = 350)
+            }
+        }
+        // "Use fingerprint" on the PIN screen, which may be the cover's copy: wait out the cover's fade.
+        LaunchedEffect(Unit) {
+            OneTap.asks.collect { UssdSession.current.value?.let { payWithFingerprint(it.flow, settle = 260) } }
+        }
         BackHandler(enabled = stack.size > 1 && stack.last() != Screen.Running) { pop() }
         // On the PIN screen, back leaves it (closing a warm menu); once paying, back does nothing.
         BackHandler(enabled = stack.lastOrNull() == Screen.Running && session?.confirmed == false) {
@@ -513,6 +598,7 @@ class MainActivity : ComponentActivity() {
                 onCashOut = { push(Screen.Number(FlowKind.CashOut, "", null)) },
                 onBalance = { start(Flows.balance()) },
                 onSetup = { push(Screen.Setup(then = null)) },
+                onOneTap = { push(Screen.OneTap) },
                 onAbout = { push(Screen.About) },
                 onUpdates = { push(Screen.Updates) },
                 updateAvailable = release != null,
@@ -592,6 +678,7 @@ class MainActivity : ComponentActivity() {
             )
             Screen.About -> AboutScreen(onBack = ::pop)
             Screen.Updates -> UpdatesScreen(onBack = ::pop)
+            Screen.OneTap -> OneTapScreen(guided = setupTick.let { inUse() } == Method.Guided, onBack = ::pop)
         }
     }
 
