@@ -176,16 +176,16 @@ fun NumberScreen(
                     }
                     .semantics { customActions = listOf(CustomAccessibilityAction("Paste") { paste(); true }) },
             )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                when {
-                    valid -> if (crop != null) "Check every digit against the photo." else " "
-                    number.length == 11 -> "That isn't a mobile number. It should start with 013 to 019."
-                    else -> "${11 - number.length} more digit${if (11 - number.length == 1) "" else "s"}"
-                },
-                style = Type.label,
-                color = if (number.length == 11 && !valid) t.error else t.inkSoft,
-            )
+            // Only when there is something to say; otherwise the chips sit right under the number.
+            val note = when {
+                valid -> if (crop != null) "Check every digit against the photo." else null
+                number.length == 11 -> "That isn't a mobile number. It should start with 013 to 019."
+                else -> null
+            }
+            if (note != null) {
+                Spacer(Modifier.height(10.dp))
+                Text(note, style = Type.label, color = if (valid) t.inkSoft else t.error)
+            }
             if (crop == null) {
                 FlowRow(
                     Modifier.fillMaxWidth().padding(top = 12.dp),
@@ -195,6 +195,11 @@ fun NumberScreen(
                     Chip(AppIcons.Person, "Contacts") { contact.launch(Unit) }
                     if (onScan != null) Chip(AppIcons.Scan, "Scan") { onScan() }
                 }
+            }
+            // The note's room, kept below the chips when there's no note: the chips move up to the number,
+            // and Add reference (or its field) stays where it was.
+            if (takesReference && note == null) {
+                Spacer(Modifier.height(10.dp + with(LocalDensity.current) { Type.label.lineHeight.toDp() }))
             }
             if (takesReference && !showReference) {
                 Text(
