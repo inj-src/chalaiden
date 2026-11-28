@@ -41,6 +41,15 @@ object OneTap {
     private val _saved = MutableStateFlow(false)
     val saved: StateFlow<Boolean> = _saved.asStateFlow()
 
+    private val _suspect = MutableStateFlow(false)
+
+    /**
+     * bKash refused the saved PIN on its last use and it hasn't been changed since. The fingerprint is
+     * then not offered on the PIN screen: one more wrong PIN brings bKash's lock closer. Saving a PIN,
+     * or bKash accepting this one, clears it.
+     */
+    val suspect: StateFlow<Boolean> = _suspect.asStateFlow()
+
     /** The fingerprint sheet is up; the run cover stays down meanwhile, or it would hide the sheet. */
     val prompting = MutableStateFlow(false)
 
@@ -59,6 +68,7 @@ object OneTap {
     fun init(context: Context) {
         val alias = prefs(context).getString(ALIAS, null)
         _saved.value = alias != null && prefs(context).contains(PIN) && runCatching { keyStore().containsAlias(alias) }.getOrDefault(false)
+        _suspect.value = _saved.value && prefs(context).getBoolean(SUSPECT, false)
     }
 
     fun readiness(context: Context): Readiness = when (BiometricManager.from(context).canAuthenticate(BIOMETRIC_STRONG)) {
@@ -114,7 +124,8 @@ object OneTap {
 
     /**
      * A cipher to open the saved PIN with, for the fingerprint sheet. Null when there is none, or when
-     * the phone's fingerprints changed since it was saved: then it's gone for good and is removed.
+     * the phone's fingerprints changed since it was saved: then it's gone for good and is removed. Some
+     * older keystores report that change as an ordinary error, so two failures in a row count as it too.
      */
     fun decrypter(context: Context): Cipher? {
         val iv = prefs(context).getString(IV, null) ?: return null
@@ -123,15 +134,22 @@ object OneTap {
             val key = keyStore().getKey(alias, null) as? SecretKey ?: return null.also { forget(context) }
             Cipher.getInstance(TRANSFORMATION).apply {
                 init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)))
-            }
+            }.also { prefs(context).edit().remove(FAILS).apply() }
         } catch (e: KeyPermanentlyInvalidatedException) {
             forget(context)
             null
         } catch (e: GeneralSecurityException) {
-            null // a keystore hiccup (some phones' keystores throw oddly): the PIN stays, typed this time
+            failed(context)
         } catch (e: ProviderException) {
-            null
+            failed(context)
         }
+    }
+
+    /** A keystore error: once may be a hiccup and the PIN stays; twice running, it's gone and is removed. */
+    private fun failed(context: Context): Cipher? {
+        val fails = prefs(context).getInt(FAILS, 0) + 1
+        if (fails >= 2) forget(context) else prefs(context).edit().putInt(FAILS, fails).apply()
+        return null
     }
 
     /** After the fingerprint: the saved PIN, opened with [cipher] (from [decrypter]). */
@@ -142,19 +160,17 @@ object OneTap {
 
     /** Removes the saved PIN and its key. */
     fun forget(context: Context) {
-        prefs(context).edit().remove(PIN).remove(IV).remove(ALIAS).remove(SUSPECT).apply()
+        prefs(context).edit().remove(PIN).remove(IV).remove(ALIAS).remove(SUSPECT).remove(FAILS).apply()
         listOf(KEY_A, KEY_B).forEach { runCatching { keyStore().deleteEntry(it) } }
         _saved.value = false
+        _suspect.value = false
     }
 
-    /**
-     * bKash refused the saved PIN on its last use and it hasn't been changed since. The fingerprint sheet
-     * then stops opening by itself: one more wrong PIN brings bKash's lock closer. Saving a PIN, or bKash
-     * accepting this one, clears it.
-     */
-    fun suspect(context: Context): Boolean = prefs(context).getBoolean(SUSPECT, false)
-
-    fun suspect(context: Context, value: Boolean) = prefs(context).edit().putBoolean(SUSPECT, value).apply()
+    /** Sets [suspect]. */
+    fun suspect(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(SUSPECT, value).apply()
+        _suspect.value = value
+    }
 
     /**
      * bKash's answer says the PIN was wrong: "The Mobile PIN is invalid." (*247#, 2026-11). Only then
@@ -197,4 +213,5 @@ object OneTap {
     private const val PIN = "pin"
     private const val IV = "iv"
     private const val SUSPECT = "suspect"
+    private const val FAILS = "fails"
 }

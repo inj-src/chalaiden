@@ -8,6 +8,8 @@ import android.widget.Toast
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
+import androidx.biometric.BiometricPrompt
+import android.os.SystemClock
 import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -111,6 +113,9 @@ private sealed interface Screen {
     data class OneTap(val change: Boolean = false) : Screen
 }
 
+/** Away this long, and coming back counts as opening Chalaiden again (for One Tap's offer). */
+private const val REOPEN_AFTER_MS = 30 * 60 * 1000L
+
 // A FragmentActivity because One Tap's fingerprint sheet (androidx BiometricPrompt) is hosted by one.
 class MainActivity : FragmentActivity() {
     private val stack = mutableStateListOf<Screen>(Screen.Home)
@@ -168,7 +173,7 @@ class MainActivity : FragmentActivity() {
         enableEdgeToEdge(SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT), SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT))
         RunCover.attach(this)
         OneTap.init(this)
-        if (savedInstanceState == null) prefs.opens += 1
+        if (savedInstanceState == null) prefs.opens += 1 // and in onStart, when it comes back after a while
         GuideSession.bind(this)
         GuideCover.attach(this)
         // "Hold to pay" is pressed on the cover, but only a foreground activity can dial *247#.
@@ -183,6 +188,22 @@ class MainActivity : FragmentActivity() {
             stack += Screen.Setup(then = null)
         }
         setContent { ChalaidenTheme { App() } }
+    }
+
+    /** When Chalaiden last went out of sight, to tell coming back to it from a trip to Settings. */
+    private var stoppedAt = 0L
+
+    override fun onStart() {
+        super.onStart()
+        // Back on Home keeps the activity on Android 12+, so reopening it from the launcher only starts it.
+        // A long absence counts as another open; a quick trip to Settings or the dialer doesn't.
+        if (stoppedAt != 0L && SystemClock.elapsedRealtime() - stoppedAt > REOPEN_AFTER_MS) prefs.opens += 1
+        stoppedAt = 0L
+    }
+
+    override fun onStop() {
+        super.onStop()
+        stoppedAt = SystemClock.elapsedRealtime()
     }
 
     override fun onResume() {
@@ -226,6 +247,8 @@ class MainActivity : FragmentActivity() {
         stopWatchingShizuku?.invoke()
         stopWatchingShizuku = null
         prompt?.cancel()
+        sheet?.cancelAuthentication() // its callback outlives this activity otherwise, and must not act for it
+        sheet = null
         OneTap.prompting.value = false // a fingerprint sheet that never called back must not keep the cover down
         super.onDestroy()
     }
@@ -464,13 +487,16 @@ class MainActivity : FragmentActivity() {
     /** The fingerprint sheet on its way (waiting for the cover to go); a key press cancels it. */
     private var prompt: Job? = null
 
+    /** The fingerprint sheet that is up, from [payWithFingerprint]. */
+    private var sheet: BiometricPrompt? = null
+
     /**
      * One Tap: the phone's fingerprint sheet, naming what it's for. A match opens the saved PIN and sends
      * it, as "Hold to pay" would; "Use PIN" leaves the PIN pad. Only before anything is dialled: then this
      * activity is in front, and hiding the cover for the sheet shows nothing of bKash's.
      */
     private fun payWithFingerprint(flow: UssdFlow, settle: Long) {
-        if (OneTap.prompting.value || !OneTap.saved.value) return
+        if (OneTap.prompting.value || !OneTap.saved.value || OneTap.suspect.value) return
         val run = runId
         val ready = {
             run == runId && stack.lastOrNull() == Screen.Running && PinEntry.pin.isEmpty() &&
@@ -482,14 +508,15 @@ class MainActivity : FragmentActivity() {
             var handedOver = false
             try {
                 delay(settle) // the PIN screen sliding in
-                // The cover sits above every window, the sheet included: open only once it has gone.
-                withTimeoutOrNull(1_000) { RunCover.onScreen.first { !it } }
+                // The cover sits above every window, the sheet included: open only once it has gone. If it
+                // hasn't, don't open a sheet nobody can see; "Use fingerprint" stays to try again.
+                withTimeoutOrNull(1_000) { RunCover.onScreen.first { !it } } ?: return@launch
                 // Behind another app the sheet can't open, and androidx would never call back.
-                if (!ready() || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@launch
+                if (RunCover.onScreen.value || !ready() || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@launch
                 val cipher = OneTap.decrypter(this@MainActivity)
                 if (cipher == null) {
-                    OneTap.pinNotice.value = if (OneTap.saved.value) "The saved PIN couldn't be opened this time. Type your PIN."
-                    else "Your phone's fingerprints changed, so the saved PIN was removed. Type your PIN."
+                    OneTap.pinNotice.value = if (OneTap.saved.value) "The saved PIN couldn't be opened. Type your PIN."
+                    else "The saved PIN can't be opened any more, so it was removed. Type your PIN."
                     return@launch
                 }
                 val amount = flow.amount?.toLongOrNull()?.let { "%,d TK".format(it) }
@@ -499,15 +526,17 @@ class MainActivity : FragmentActivity() {
                     FlowKind.CashOut -> amount?.let { "Cash out $it?" } ?: "Cash out?"
                     FlowKind.Balance -> "Check your balance?"
                 }
-                handedOver = true
-                askFingerprint(
+                sheet = askFingerprint(
                     title = title,
                     subtitle = flow.recipient?.let { "To ${grouped(it, flow.groups ?: PhoneGroups)}" },
                     cancel = "Use PIN",
                     cipher = cipher,
                     confirm = flow.kind != FlowKind.Balance,
                 ) { touch ->
+                    sheet = null
                     OneTap.prompting.value = false
+                    // A sheet that outlived this activity (recreated meanwhile): nothing here to act for.
+                    if (isDestroyed || isFinishing) return@askFingerprint
                     when (touch) {
                         is Touch.Unlocked -> {
                             val pin = OneTap.read(this@MainActivity, touch.cipher)
@@ -525,6 +554,7 @@ class MainActivity : FragmentActivity() {
                         is Touch.Failed -> OneTap.pinNotice.value = "${touch.message.trimEnd('.')}. Type your PIN."
                     }
                 }
+                handedOver = true // only once the sheet is up: if opening it threw, finally clears the flag
             } finally {
                 if (!handedOver) OneTap.prompting.value = false
             }
@@ -583,8 +613,8 @@ class MainActivity : FragmentActivity() {
             if (stack.lastOrNull() == Screen.Running && askedFor != runId && OneTap.saved.value) {
                 askedFor = runId
                 // bKash refused this PIN last time: no sheet by itself, another wrong PIN brings its lock closer.
-                if (OneTap.suspect(this@MainActivity)) {
-                    OneTap.pinNotice.value = "bKash refused your saved PIN last time. Type your PIN, or change it in ⋮ → One Tap."
+                if (OneTap.suspect.value) {
+                    OneTap.pinNotice.value = "bKash refused your saved PIN last time. Type your PIN, or change it in One Tap, in the menu on Home."
                 } else {
                     payWithFingerprint(s.flow, settle = 350)
                 }
@@ -633,18 +663,19 @@ class MainActivity : FragmentActivity() {
               val update by Updates.state.collectAsState()
               val release = (update as? Updates.State.Available)?.release
               var sheetGone by remember { mutableStateOf(false) }
-              var offering by remember { mutableStateOf(false) } // One Tap's offer, below; the update sheet waits for it
-              val updateUp = release != null && fake == null && !sheetGone && !offering && !Updates.snoozed(this)
+              var offering by remember { mutableStateOf(false) } // One Tap's offer, below
+              var offered by remember { mutableStateOf(false) } // the update sheet waits for another time: one sheet a visit
+              val updateUp = release != null && fake == null && !sheetGone && !offering && !offered && !Updates.snoozed(this)
               if (updateUp) UpdateSheet(release!!) { Updates.snooze(this); sheetGone = true }
               // One Tap is offered once, on the second open, where it can work. Decided once and held: the
               // preference only says whether to open it, so a later recomposition can't take it away. Not
               // while the update check runs, and not straight after the update sheet.
-              val canOffer = !updateUp && !sheetGone && fake == null && update !is Updates.State.Checking &&
+              val canOffer = stack.lastOrNull() == Screen.Home && !updateUp && !sheetGone && fake == null && update !is Updates.State.Checking &&
                   setupTick.let { offerOneTap() }
               LaunchedEffect(canOffer) {
-                  if (canOffer && !offering) { offering = true; prefs.oneTapOffered = true }
+                  if (canOffer && !offering) { offering = true; offered = true; prefs.oneTapOffered = true }
               }
-              if (offering) OneTapOfferSheet(
+              if (offering && stack.lastOrNull() == Screen.Home) OneTapOfferSheet(
                   onSetUp = { offering = false; push(Screen.OneTap()) },
                   onLater = {
                       offering = false
@@ -718,7 +749,8 @@ class MainActivity : FragmentActivity() {
                   delay(200)
                   settled = true
               }
-              if (wrongPin && settled) WrongPinSheet(
+              // Only while this result is the screen: not over Home, after Done, as it slides away.
+              if (wrongPin && settled && stack.lastOrNull() == screen) WrongPinSheet(
                   onChange = { OneTap.wrongPin.value = false; home(); push(Screen.OneTap(change = true)) },
                   onRemove = { OneTap.wrongPin.value = false; OneTap.forget(this) },
                   onKeep = { OneTap.wrongPin.value = false },

@@ -24,7 +24,7 @@ sealed interface Touch {
  * Shows the phone's own fingerprint sheet: Android draws it, in the phone's style, with the in-display
  * sensor marked where it is. [cipher] is what the fingerprint unlocks; the result arrives on the main
  * thread. [confirm]: a passive biometric (a face) still needs a tap on Confirm, for anything that moves
- * money.
+ * money. Returns the prompt, so its owner can cancel it when it goes away.
  */
 fun FragmentActivity.askFingerprint(
     title: String,
@@ -33,7 +33,7 @@ fun FragmentActivity.askFingerprint(
     cipher: Cipher,
     confirm: Boolean,
     onResult: (Touch) -> Unit,
-) {
+ ): BiometricPrompt {
     val prompt = BiometricPrompt(
         this,
         ContextCompat.getMainExecutor(this),
@@ -64,6 +64,7 @@ fun FragmentActivity.askFingerprint(
         .setConfirmationRequired(confirm)
         .build()
     prompt.authenticate(info, BiometricPrompt.CryptoObject(cipher))
+    return prompt
 }
 
 /** The activity behind a Compose [Context], for the fingerprint sheet; null outside one. */
