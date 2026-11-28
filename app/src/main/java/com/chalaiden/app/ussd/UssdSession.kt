@@ -44,6 +44,13 @@ object UssdSession {
     private var confirmed = false
 
     /**
+     * One Tap unlocked the PIN on the number screen, before the amount ([holdPin]). It goes in with Pay, and
+     * only ever into a summary that matches that amount. Dropped with the run, or once the menu would expire.
+     */
+    private var heldPin: String? = null
+    private var heldAt = 0L
+
+    /**
      * Starts the automatic driver for a flow; set by the activity, because only a foreground activity can
      * dial `*247#`. Called on the first PIN digit, so the menu walks while the user types.
      */
@@ -60,6 +67,7 @@ object UssdSession {
 
     /** Shows the PIN screen for [flow]. Nothing is dialled until the user presses "Hold to pay". */
     @Synchronized fun prepare(flow: UssdFlow) {
+        heldPin = null
         engine = null
         staged = flow
         confirmed = false
@@ -112,12 +120,25 @@ object UssdSession {
      * The amount, typed on the run screen while the menu was walked ([UssdFlow.amountLater]). bKash gets it
      * as soon as it asks (or at once if it already has); the PIN screen comes next.
      */
-    @Synchronized fun supplyAmount(amount: String) {
-        val flow = staged?.takeIf { it.needsAmount && !confirmed } ?: return
-        staged = flow.withAmount(amount)
-        val action = engine?.supplyAmount(amount)
-        publish()
-        action?.takeIf { it != Action.None }?.let { performer?.invoke(it) }
+    fun supplyAmount(amount: String, now: Long = System.currentTimeMillis()) {
+        val pin = synchronized(this) {
+            val flow = staged?.takeIf { it.needsAmount && !confirmed } ?: return
+            staged = flow.withAmount(amount)
+            val action = engine?.supplyAmount(amount)
+            publish()
+            action?.takeIf { it != Action.None }?.let { performer?.invoke(it) }
+            heldPin.takeIf { now - heldAt < WARM_EXPIRY_MILLIS }.also { heldPin = null }
+        } ?: return
+        // One Tap: Pay is the go-ahead, as "Hold to pay" is. Dial again first if bKash dropped the menu.
+        warmUp()
+        confirm(pin)
+    }
+
+    /** One Tap's fingerprint, taken on the number screen: see [heldPin]. */
+    @Synchronized fun holdPin(pin: String, now: Long = System.currentTimeMillis()) {
+        if (staged?.amountLater != true || confirmed) return
+        heldPin = pin
+        heldAt = now
     }
 
     /**
@@ -140,6 +161,7 @@ object UssdSession {
 
     /** Left the PIN screen (back or Cancel): end any warm session and drop the screen. */
     @Synchronized fun abandon(now: Long = System.currentTimeMillis()) {
+        heldPin = null
         if (confirmed && isActive) return cancel()
         coolDown(now)
         staged = null
@@ -183,6 +205,8 @@ object UssdSession {
         }
         if (!confirmed && since != null && now - since > WARM_EXPIRY_MILLIS) {
             // Warm, but the user is still typing the amount or the PIN: close it before bKash does.
+            // One Tap's unlocked PIN goes too: Pay after this long asks for the PIN again.
+            heldPin = null
             val action = e.cancel()
             engine = null
             endedAt = now
@@ -253,6 +277,7 @@ object UssdSession {
 
     /** Called once the result has been shown, so a stale session can't be resumed. */
     @Synchronized fun clear(now: Long = System.currentTimeMillis()) {
+        heldPin = null
         if (engine != null) endedAt = now
         engine = null
         staged = null

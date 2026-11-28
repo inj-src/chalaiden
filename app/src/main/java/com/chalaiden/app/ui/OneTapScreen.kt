@@ -229,7 +229,7 @@ private fun SavePin(onSaved: () -> Unit) {
                 is Touch.Unlocked -> runCatching { OneTap.store(context, touch.cipher, entered) }
                     .onSuccess { pin = ""; onSaved() }
                     .onFailure { problem = "Couldn't save it. Try again." }
-                Touch.Declined -> Unit
+                Touch.Declined, Touch.UsePin -> Unit
                 is Touch.Failed -> problem = touch.message
             }
         }

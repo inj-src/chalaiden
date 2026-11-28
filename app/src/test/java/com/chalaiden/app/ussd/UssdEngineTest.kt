@@ -474,4 +474,40 @@ class UssdEngineTest {
         assertEquals("10", snap.flow.amount)
         UssdSession.clear()
     }
+
+    /** One Tap on the number screen: Pay is the go-ahead, and the PIN still waits for a matching summary. */
+    @Test fun heldPinGoesInWithPayOnlyIntoAMatchingSummary() {
+        earlyToAmount()
+        UssdSession.holdPin("12345")
+        UssdSession.supplyAmount("10")
+        assertTrue(UssdSession.current.value!!.confirmed)
+        UssdSession.onDialog(prompt("Enter Reference:"))
+        assertEquals(Action.Cancel, UssdSession.onDialog(prompt(paymentConfirm.replace("Amount: Tk 10", "Amount: Tk 100"))))
+        UssdSession.clear()
+
+        earlyToAmount()
+        UssdSession.holdPin("12345")
+        UssdSession.supplyAmount("10")
+        UssdSession.onDialog(prompt("Enter Reference:"))
+        assertEquals("12345", (UssdSession.onDialog(prompt(paymentConfirm)) as Action.Reply).text)
+        UssdSession.clear()
+    }
+
+    @Test fun heldPinLapsesWithTheMenu() {
+        earlyToAmount()
+        UssdSession.holdPin("12345", now = 0L)
+        UssdSession.supplyAmount("10", now = UssdSession.WARM_EXPIRY_MILLIS + 1)
+        assertTrue(!UssdSession.current.value!!.confirmed)
+        UssdSession.clear()
+    }
+
+    @Test fun leavingDropsTheHeldPin() {
+        earlyToAmount()
+        UssdSession.holdPin("12345")
+        UssdSession.abandon()
+        earlyToAmount()
+        UssdSession.supplyAmount("10")
+        assertTrue(!UssdSession.current.value!!.confirmed)
+        UssdSession.clear()
+    }
 }

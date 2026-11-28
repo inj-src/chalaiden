@@ -321,7 +321,7 @@ class MainActivity : FragmentActivity() {
             debugMode = intent.getStringExtra("mode")?.takeIf { it == "shizuku" || it == "guided" }
             checkSetup()
         }
-        // Debug builds only: dial from the number screen even with One Tap on, to try that path on a phone that has it.
+        // Debug builds only: skip One Tap's fingerprint sheet on the number screen, as if "Use PIN" were pressed.
         //   adb shell am start -n com.chalaiden.app/.MainActivity --ez early_dial true
         if (BuildConfig.DEBUG && intent?.hasExtra("early_dial") == true) debugEarly = intent.getBooleanExtra("early_dial", false)
         if (BuildConfig.DEBUG && intent?.hasExtra("shizuku_status") == true) {
@@ -483,14 +483,67 @@ class MainActivity : FragmentActivity() {
     /**
      * After the number (and reference): with automatic answering, bKash's menu opens now and is walked to
      * its amount prompt while the amount is typed, on the run screen ([UssdFlow.amountLater]). Guided mode
-     * can't, and neither can One Tap: its fingerprint sheet opens only while nothing of bKash's is up, so
-     * there the amount comes first, as before. [flow] has no amount yet.
+     * can't: there the amount comes first, as before. [flow] has no amount yet.
+     *
+     * One Tap asks for the fingerprint first, here: its sheet can't open once bKash's dialog is up (on
+     * OxygenOS that dialog is the phone app's own activity, on top of this one).
      */
     private fun toAmount(flow: UssdFlow) {
-        val oneTap = OneTap.saved.value && !OneTap.suspect.value && !debugEarly
-        if (phoneReady() && backend() != null && !oneTap) return dialEarly(flow)
+        if (phoneReady() && backend() != null) {
+            val oneTap = OneTap.saved.value && !OneTap.suspect.value && !debugEarly
+            return if (oneTap) unlockThenDial(flow) else dialEarly(flow)
+        }
         val number = flow.recipient ?: return
         push(Screen.Amount(flow.kind, number, flow.groups, flow.reference?.takeUnless(Flows::isDefaultReference).orEmpty()))
+    }
+
+    /**
+     * One Tap on the number screen: the fingerprint unlocks the saved PIN, then bKash's menu opens as without
+     * One Tap. The PIN waits in [UssdSession.holdPin] for Pay, and goes in only once bKash's summary shows
+     * this recipient and the amount typed. "Use PIN" dials too, and the PIN is typed after the amount; back
+     * or tapping outside stays here, with nothing dialled.
+     */
+    private fun unlockThenDial(flow: UssdFlow) {
+        if (OneTap.prompting.value) return
+        val cipher = OneTap.decrypter(this) ?: return dialEarly(flow).also {
+            OneTap.pinNotice.value = if (OneTap.saved.value) "Couldn't unlock your saved PIN. Type it this time. If this keeps happening, turn One Tap off and on again from the top-right menu."
+            else "Your saved PIN stopped working and was removed. Type your PIN."
+        }
+        val to = flow.recipient?.let { grouped(it, flow.groups ?: PhoneGroups) }.orEmpty()
+        val title = when (flow.kind) {
+            FlowKind.Payment -> "Pay $to?"
+            FlowKind.SendMoney -> "Send money to $to?"
+            FlowKind.CashOut -> "Cash out at $to?"
+            FlowKind.Balance -> "Check your balance?"
+        }
+        OneTap.prompting.value = true
+        sheet = runCatching {
+            askFingerprint(title = title, subtitle = "You'll type the amount next", cancel = "Use PIN", cipher = cipher, confirm = true) { touch ->
+                sheet = null
+                OneTap.prompting.value = false
+                if (isDestroyed || isFinishing) return@askFingerprint
+                // Only from the screen that asked: a sheet answered after leaving it dials nothing.
+                if ((stack.lastOrNull() as? Screen.Number)?.kind != flow.kind) return@askFingerprint
+                when (touch) {
+                    is Touch.Unlocked -> {
+                        val pin = OneTap.read(this@MainActivity, touch.cipher)
+                        dialEarly(flow)
+                        if (pin == null) {
+                            OneTap.pinNotice.value = "Couldn't unlock your saved PIN. Type it this time."
+                        } else {
+                            OneTap.usedThisRun = true
+                            UssdSession.holdPin(pin)
+                        }
+                    }
+                    Touch.UsePin -> dialEarly(flow)
+                    Touch.Declined -> Unit
+                    is Touch.Failed -> {
+                        dialEarly(flow)
+                        OneTap.pinNotice.value = "${touch.message.trimEnd('.')}. Type your PIN."
+                    }
+                }
+            }
+        }.onFailure { OneTap.prompting.value = false }.getOrNull()
     }
 
     /** Debug builds only: see `early_dial` in [handle]. */
@@ -596,7 +649,7 @@ class MainActivity : FragmentActivity() {
                                 UssdSession.confirm(pin)
                             }
                         }
-                        Touch.Declined -> Unit
+                        Touch.Declined, Touch.UsePin -> Unit
                         is Touch.Failed -> OneTap.pinNotice.value = "${touch.message.trimEnd('.')}. Type your PIN."
                     }
                 }

@@ -13,8 +13,11 @@ sealed interface Touch {
     /** The finger matched; [cipher] is now unlocked for one use. */
     data class Unlocked(val cipher: Cipher) : Touch
 
-    /** "Use PIN", "Cancel", back, tapping outside, or no touch in time: nothing to say. */
+    /** Back, tapping outside, or no touch in time: nothing to say. */
     data object Declined : Touch
+
+    /** The sheet's own button ("Use PIN"): the user would rather type it. */
+    data object UsePin : Touch
 
     /** It couldn't be used (too many tries, sensor busy); [message] is Android's own, fit to show. */
     data class Failed(val message: String) : Touch
@@ -47,8 +50,9 @@ fun FragmentActivity.askFingerprint(
                 onResult(
                     when (code) {
                         // Timeout: no touch for a while (checking the amount with the shop). Not a failure.
-                        BiometricPrompt.ERROR_NEGATIVE_BUTTON, BiometricPrompt.ERROR_USER_CANCELED,
-                        BiometricPrompt.ERROR_CANCELED, BiometricPrompt.ERROR_TIMEOUT -> Touch.Declined
+                        BiometricPrompt.ERROR_NEGATIVE_BUTTON -> Touch.UsePin
+                        BiometricPrompt.ERROR_USER_CANCELED, BiometricPrompt.ERROR_CANCELED,
+                        BiometricPrompt.ERROR_TIMEOUT -> Touch.Declined
                         else -> Touch.Failed(message.toString())
                     },
                 )
