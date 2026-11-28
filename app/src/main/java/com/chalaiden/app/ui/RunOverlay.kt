@@ -176,34 +176,28 @@ private fun PinStep(flow: UssdFlow) {
             else -> null
         }
         val reference = flow.reference?.takeIf { !Flows.isDefaultReference(it) }
-        if (reference != null || note != null) {
+        // Why the fingerprint didn't work. In with the details, so it shares their capped, scrolling room
+        // instead of taking more from the keys; it stays while typing, so the keys never resize mid-PIN.
+        val notice by OneTap.pinNotice.collectAsState()
+        val details = reference != null || note != null || notice != null
+        if (details) {
             Column(Modifier.heightIn(max = 120.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                notice?.let {
+                    Text(it, style = Type.body, color = t.ink, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                }
                 reference?.let { DetailRow("Reference", it) }
                 note?.let { Text(it, style = Type.body, color = t.inkSoft) }
             }
         }
-        Spacer(Modifier.height(if (reference != null || note != null) 24.dp else 8.dp))
+        Spacer(Modifier.height(if (details) 24.dp else 8.dp))
         PinDots(pin.length, PIN_LENGTH, Modifier.align(Alignment.CenterHorizontally))
         Spacer(Modifier.height(16.dp))
         // With One Tap on, the phone's fingerprint sheet opens over this screen by itself; "Use PIN" there
         // leaves this pad. The sheet can be brought back from here while nothing is dialled yet.
         val oneTap by OneTap.saved.collectAsState()
-        val notice by OneTap.pinNotice.collectAsState()
         val suspect by OneTap.suspect.collectAsState()
         val cold = UssdSession.current.collectAsState().value?.state == RunState.Ready
-        // The pill and the lock line share one height, so the keys don't resize on the first digit; a
-        // notice comes only before typing (the sheet closed) and stays while typing, for the same reason.
-        Column(
-            Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
-        ) {
-        // Why the fingerprint didn't work, read out as it appears.
-        notice?.let {
-            Text(
-                it, style = Type.label.copy(fontSize = 13.sp), color = t.inkSoft, textAlign = TextAlign.Center,
-                modifier = Modifier.padding(bottom = 4.dp).semantics { liveRegion = LiveRegionMode.Polite },
-            )
-        }
+        // The pill and the lock line share one height, so the keys don't resize on the first digit.
         Box(Modifier.fillMaxWidth().heightIn(min = 48.dp), contentAlignment = Alignment.Center) {
           when {
             // Not while bKash's last answer to the saved PIN was "wrong": it would only send it again.
@@ -226,7 +220,6 @@ private fun PinStep(flow: UssdFlow) {
                 )
             }
           }
-        }
         }
         Keypad(
             // The notice stays while typing: clearing it would resize the keys on the first press.
