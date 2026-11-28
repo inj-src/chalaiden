@@ -78,6 +78,10 @@ import androidx.compose.ui.layout.Layout
 import com.chalaiden.app.ui.theme.Type
 import com.chalaiden.app.ui.theme.tokens
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -348,9 +352,8 @@ fun PinDots(filled: Int, length: Int, modifier: Modifier = Modifier) {
  * Press and hold to confirm a payment. A plain tap is too easy to make by accident
  * for something that moves money.
  *
- * The thumb covers the middle of the button, so the hold is also shown where the thumb isn't: a
- * "Keep holding…" chip with its own progress bar floats above the button, and the phone ticks as the
- * hold fills, with a firmer buzz once it is done.
+ * The thumb covers the middle of the button, so the phone also ticks as the hold fills, with a firmer
+ * buzz once it is done. A quick tap does nothing but raise a "Tap and hold" tip above the button.
  */
 @Composable
 fun HoldToConfirm(
@@ -369,6 +372,9 @@ fun HoldToConfirm(
     val progress = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     var done by remember { mutableStateOf(false) }
+    // A tap instead of a hold shows the tip for a while; the next press, or the time running out, hides it.
+    var tip by remember { mutableStateOf(false) }
+    var tipJob by remember { mutableStateOf<Job?>(null) }
     // The gesture below outlives recompositions; it must see the button as it is now.
     val enabledNow by rememberUpdatedState(enabled)
     val confirmedNow by rememberUpdatedState(onConfirmed)
@@ -377,8 +383,7 @@ fun HoldToConfirm(
     val track by animateColorAsState(if (enabled) t.accent else t.raised, tween(180), label = "track")
     val ink by animateColorAsState(if (enabled) t.onAccent else t.inkSoft, tween(180), label = "ink")
     val sweep = lerp(t.accent, Color.Black, 0.28f)
-    val holding = progress.value > 0f && !done
-    val chip by animateFloatAsState(if (holding) 1f else 0f, tween(if (holding) 140 else 180, easing = PressEase), label = "chip")
+    val tipShown by animateFloatAsState(if (tip && enabled) 1f else 0f, tween(if (tip) 160 else 180, easing = PressEase), label = "tip")
     Box(modifier.fillMaxWidth()) {
         Box(
             Modifier
@@ -390,7 +395,9 @@ fun HoldToConfirm(
                 .pointerInput(enabled) {
                     if (!enabled) return@pointerInput
                     awaitEachGesture {
-                        awaitFirstDown()
+                        val down = awaitFirstDown()
+                        tipJob?.cancel()
+                        tip = false
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         if (!done) onHoldStart()
                         val job = scope.launch {
@@ -409,13 +416,19 @@ fun HoldToConfirm(
                         }
                         // Also runs when the button is disabled mid-hold (e.g. a PIN digit deleted with a
                         // second finger): that restarts this gesture, and the fill must stop with it.
+                        var up: androidx.compose.ui.input.pointer.PointerInputChange? = null
                         try {
-                            waitForUpOrCancellation()
+                            up = waitForUpOrCancellation()
                         } finally {
                             if (!done) {
                                 job.cancel()
                                 onHoldCancel()
                                 scope.launch { progress.animateTo(0f, tween(200)) }
+                                // Let go this soon, it was a tap: say what the button wants.
+                                if (up != null && up.uptimeMillis - down.uptimeMillis < 450) {
+                                    tip = true
+                                    tipJob = scope.launch { delay(2500); tip = false }
+                                }
                             }
                         }
                     }
@@ -423,44 +436,56 @@ fun HoldToConfirm(
             contentAlignment = Alignment.Center,
         ) {
             Box(Modifier.align(Alignment.CenterStart).fillMaxHeight().fillMaxWidth(progress.value).background(sweep))
-            Text(label, style = Type.button, color = ink, textAlign = TextAlign.Center)
+            Text(
+                if (progress.value > 0f && !done) "Keep holding…" else label,
+                style = Type.button,
+                color = ink,
+                textAlign = TextAlign.Center,
+            )
         }
-        if (chip > 0f) HoldChip(progress = { progress.value }, appear = chip, Modifier.align(Alignment.TopCenter))
+        if (tipShown > 0f) HoldTip(appear = tipShown, Modifier.align(Alignment.TopCenter))
     }
 }
 
 /**
- * "Keep holding…" above the hold button, clear of the thumb. It takes no height (it hangs above its
- * parent, over whatever is there) and no touches, so the screen doesn't move or block when it shows.
+ * "Tap and hold", pointing down at the hold button after a tap. It takes no height (it hangs above its
+ * parent, over whatever is there) and no touches, so the screen doesn't move or block while it shows.
  */
 @Composable
-private fun HoldChip(progress: () -> Float, appear: Float, modifier: Modifier = Modifier) {
+private fun HoldTip(appear: Float, modifier: Modifier = Modifier) {
     val t = tokens
-    val gap = 12.dp
+    // The arrow's lower half hangs 6dp below the bubble; this puts its point just clear of the button.
+    val gap = (-2).dp
     Column(
         modifier
             .layout { measurable, constraints ->
-                val chip = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
-                layout(chip.width, 0) { chip.place(0, -chip.height - gap.roundToPx()) }
+                val tip = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+                layout(tip.width, 0) { tip.place(0, -tip.height - gap.roundToPx()) }
             }
             .graphicsLayer {
                 alpha = appear
                 translationY = (1f - appear) * 6.dp.toPx()
                 scaleX = 0.96f + 0.04f * appear
                 scaleY = 0.96f + 0.04f * appear
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
             }
-            .clip(RoundedCornerShape(14.dp))
-            .background(t.ink)
-            .padding(start = 16.dp, end = 16.dp, top = 9.dp, bottom = 11.dp),
+            .semantics { liveRegion = LiveRegionMode.Polite },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("Keep holding…", style = Type.label.copy(fontWeight = FontWeight.Medium), color = t.bg, maxLines = 1)
+        Text(
+            "Tap and hold",
+            style = Type.label.copy(fontWeight = FontWeight.Medium),
+            color = t.bg,
+            maxLines = 1,
+            modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(t.ink)
+                .padding(horizontal = 14.dp, vertical = 9.dp),
+        )
+        // The arrow: a square turned on its corner, half tucked under the bubble.
         Box(
-            Modifier.padding(top = 7.dp).width(120.dp).height(4.dp).clip(RoundedCornerShape(50))
-                .background(t.bg.copy(alpha = 0.25f)),
-        ) {
-            Box(Modifier.fillMaxHeight().fillMaxWidth(progress()).background(t.accent))
-        }
+            Modifier.offset(y = (-6).dp).size(12.dp)
+                .graphicsLayer { rotationZ = 45f }
+                .background(t.ink),
+        )
     }
 }
 
