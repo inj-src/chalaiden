@@ -190,21 +190,28 @@ private fun PinStep(flow: UssdFlow) {
         val oneTap by OneTap.saved.collectAsState()
         val notice by OneTap.pinNotice.collectAsState()
         val cold = UssdSession.current.collectAsState().value?.state == RunState.Ready
-        when {
-            notice != null -> Text(
-                notice!!, style = Type.label.copy(fontSize = 13.sp), color = t.inkSoft, textAlign = TextAlign.Center,
-                modifier = Modifier.align(Alignment.CenterHorizontally),
+        // Why the fingerprint didn't work, read out as it appears.
+        notice?.let {
+            Text(
+                it, style = Type.label.copy(fontSize = 13.sp), color = t.inkSoft, textAlign = TextAlign.Center,
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 4.dp)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
             )
+        }
+        // One height for the pill and the lock line, so the keypad doesn't jump on the first digit.
+        Box(Modifier.fillMaxWidth().heightIn(min = 48.dp), contentAlignment = Alignment.Center) {
+          when {
             oneTap && cold && pin.isEmpty() -> Row(
-                Modifier.align(Alignment.CenterHorizontally).heightIn(min = 48.dp).clip(RoundedCornerShape(50))
-                    .clickable(role = Role.Button) { OneTap.asks.tryEmit(Unit) }.padding(horizontal = 14.dp),
+                Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(50)).background(t.raised)
+                    .clickable(role = Role.Button) { OneTap.pinNotice.value = null; OneTap.asks.tryEmit(Unit) }
+                    .padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(AppIcons.Fingerprint, contentDescription = null, tint = t.ink, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Use fingerprint", style = Type.label, color = t.ink)
             }
-            else -> Row(Modifier.align(Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+            else -> Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(AppIcons.Lock, contentDescription = null, tint = t.inkSoft, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(
@@ -212,6 +219,7 @@ private fun PinStep(flow: UssdFlow) {
                     style = Type.label.copy(fontSize = 13.sp), color = t.inkSoft, maxLines = 1,
                 )
             }
+          }
         }
         Keypad(
             onKey = {
@@ -220,7 +228,7 @@ private fun PinStep(flow: UssdFlow) {
                 UssdSession.warmUp()
             },
             onBackspace = { PinEntry.pin = PinEntry.pin.dropLast(1) },
-            modifier = Modifier.weight(1f).padding(top = 16.dp),
+            modifier = Modifier.weight(1f).padding(top = 8.dp),
         )
         Spacer(Modifier.height(12.dp))
         fun send() {

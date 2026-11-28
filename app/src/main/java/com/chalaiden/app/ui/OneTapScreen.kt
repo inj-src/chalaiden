@@ -1,5 +1,8 @@
 package com.chalaiden.app.ui
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -85,7 +88,11 @@ fun OneTapScreen(guided: Boolean, change: Boolean, onBack: () -> Unit) {
     val context = LocalContext.current
     val saved by OneTap.saved.collectAsState()
     var readiness by remember { mutableStateOf(OneTap.readiness(context)) }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { readiness = OneTap.readiness(context) } // back from Settings
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        readiness = OneTap.readiness(context) // back from Settings
+        // All fingerprints removed: Android has destroyed the key, so the saved PIN can never open again.
+        if (readiness == OneTap.Readiness.NoneEnrolled && OneTap.saved.value) OneTap.forget(context)
+    }
     // Typing the PIN to save. Plain remember, never saveable: the PIN must not reach the saved state.
     var entering by remember { mutableStateOf(change && OneTap.saved.value) }
     BackHandler(enabled = entering) { entering = false }
@@ -200,12 +207,16 @@ private fun SavePin(onSaved: () -> Unit) {
     }
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(8.dp))
-        Text("Enter your bKash PIN", style = Type.display.copy(fontSize = 26.sp, lineHeight = 31.sp), color = t.ink)
+        Text("Enter your bKash PIN", style = Type.display.copy(fontSize = 26.sp, lineHeight = 31.sp), color = t.ink, maxLines = 2)
         Spacer(Modifier.height(8.dp))
-        Text(
-            problem ?: "It's locked to your fingerprint. If it's wrong, bKash says so the next time you pay, and Chalaiden removes it.",
-            style = Type.label.copy(lineHeight = 20.sp), color = if (problem != null) t.error else t.inkSoft,
-        )
+        // Capped and scrolling, so a large font size can't squeeze the keypad.
+        Column(Modifier.heightIn(max = 96.dp).verticalScroll(rememberScrollState())) {
+            Text(
+                problem ?: "It's locked to your fingerprint. If bKash ever says it's wrong, Chalaiden asks you what to do with it.",
+                style = Type.label.copy(lineHeight = 20.sp), color = if (problem != null) t.error else t.inkSoft,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
         Spacer(Modifier.height(24.dp))
         PinDots(pin.length, PIN_DIGITS, Modifier.align(Alignment.CenterHorizontally))
         Keypad(
@@ -222,7 +233,7 @@ private fun SavePin(onSaved: () -> Unit) {
 private fun Blocked(title: String, body: String, action: Pair<String, () -> Unit>?) {
     val t = tokens
     Column(Modifier.fillMaxSize()) {
-        Column(Modifier.weight(1f).padding(horizontal = 20.dp, vertical = 16.dp)) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp)) {
             Box(Modifier.size(88.dp).clip(CircleShape).background(t.surface), contentAlignment = Alignment.Center) {
                 Icon(AppIcons.Fingerprint, contentDescription = null, tint = t.inkSoft, modifier = Modifier.size(44.dp))
             }
@@ -321,8 +332,8 @@ private fun PhoneSketch(kind: OneTap.Sensor, height: Dp, motion: SensorMotion) {
     val t = tokens
     val width = height * 0.5f
     val corner = RoundedCornerShape(width * 0.2f)
-    // Room on the right for the side button.
-    Box(Modifier.size(width + 6.dp, height)) {
+    // Room on the right for the side button, only where there is one: the others stay centred.
+    Box(Modifier.size(width + if (kind == OneTap.Sensor.Side) 6.dp else 0.dp, height)) {
         Box(Modifier.size(width, height).border(2.dp, t.line, corner))
         when (kind) {
             OneTap.Sensor.InDisplay -> SensorSpot(

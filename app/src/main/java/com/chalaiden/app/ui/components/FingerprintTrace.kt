@@ -100,14 +100,15 @@ fun FingerprintTrace(color: Color, modifier: Modifier = Modifier) {
                         if (t == null) return@translate
                         val head = progress(t, ridge.headDelay, ridge.headMs, FastOutSlowInEasing)
                         val tail = progress(t, ridge.tailDelay, ridge.tailMs, Wipe)
-                        // Nothing yet, or nearly gone: a sliver would draw as a lone round cap, a dot.
-                        if (head - tail < 0.02f) return@translate
                         val m = measures[i]
                         val len = m.length
+                        // Shorter than the line is wide, a sliver draws as a lone round cap: a dot. Fade in and out instead.
+                        val visible = (head - tail) * len
+                        if (visible < LINE.width) return@translate
                         val (from, to) = if (ridge.reversed) (1f - head) to (1f - tail) else tail to head
                         segment.reset()
                         m.getSegment(from * len, to * len, segment, true)
-                        drawPath(segment, color, style = LINE)
+                        drawPath(segment, color.copy(alpha = (visible / (LINE.width * 4)).coerceAtMost(1f)), style = LINE)
                     }
                 }
             }

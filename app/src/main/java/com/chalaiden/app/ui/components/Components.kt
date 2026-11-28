@@ -1,5 +1,6 @@
 package com.chalaiden.app.ui.components
 
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.composed
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -292,7 +293,10 @@ private fun Key(label: String, modifier: Modifier, height: Dp, description: Stri
 @Composable
 fun PinDots(filled: Int, length: Int, modifier: Modifier = Modifier) {
     val t = tokens
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+    Row(
+        modifier.clearAndSetSemantics { contentDescription = "$filled of $length digits entered" },
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
         repeat(length) { i ->
             Box(
                 Modifier.size(16.dp).clip(CircleShape)
