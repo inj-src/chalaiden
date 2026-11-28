@@ -44,7 +44,7 @@ object Guide {
      * "Do you want to continue?". It gets a No first; Yes would carry on with that old payment.
      */
     fun steps(flow: UssdFlow, oldSession: Boolean = false): List<GuideStep> =
-        listOfNotNull(GuideStep(GuideStep.Kind.Resume, "Continue old session? No", fill = RESUME_NO).takeIf { oldSession }) +
+        listOfNotNull(GuideStep(GuideStep.Kind.Resume, "Old menu open? Choose No", fill = RESUME_NO).takeIf { oldSession }) +
             menuSteps(flow)
 
     private fun menuSteps(flow: UssdFlow): List<GuideStep> = flow.steps.map { step ->

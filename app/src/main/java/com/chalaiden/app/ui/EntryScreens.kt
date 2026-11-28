@@ -110,7 +110,7 @@ fun NumberScreen(
                         .clip(RoundedCornerShape(20.dp)).background(t.surface),
                 )
                 Spacer(Modifier.height(14.dp))
-                Text(if (initial.isNotEmpty()) "Chalaiden read" else "Type the number you see", style = Type.label, color = t.inkSoft)
+                Text(if (initial.isNotEmpty()) "Number found" else "Type the number you see", style = Type.label, color = t.inkSoft)
             } else {
                 Spacer(Modifier.height(24.dp))
             }

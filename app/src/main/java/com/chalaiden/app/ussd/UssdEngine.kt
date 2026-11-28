@@ -91,7 +91,7 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
             is RunState.Working -> advance(s.stepIndex, dialog).also { if (it is Action.Reply) answered += dialog.textOrEmpty() }
             is RunState.AwaitingPin -> {
                 // A new dialog while we wait for the PIN means bKash dropped the session.
-                finish(textOf(dialog).let { Outcome.Failed(it.ifBlank { "The bKash session timed out." }, pinSent = false, fromBkash = it.isNotBlank()) })
+                finish(textOf(dialog).let { Outcome.Failed(it.ifBlank { "bKash's menu timed out." }, pinSent = false, fromBkash = it.isNotBlank()) })
                 if (dialog is Dialog.Prompt) Action.Cancel else Action.Dismiss
             }
             RunState.Confirming -> {
@@ -150,7 +150,7 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
     fun onSessionLost() {
         when (state) {
             is RunState.Working, is RunState.AwaitingPin ->
-                finish(Outcome.Failed("The bKash session ended before payment. Nothing was charged.", pinSent = false, fromBkash = false))
+                finish(Outcome.Failed("bKash's menu closed before your PIN was sent.", pinSent = false, fromBkash = false))
             RunState.Confirming ->
                 finish(Outcome.Unknown("bKash didn't reply after the PIN."))
             is RunState.Finished, RunState.Ready -> Unit

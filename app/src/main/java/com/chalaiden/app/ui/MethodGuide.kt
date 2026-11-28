@@ -126,7 +126,7 @@ fun MethodGuideScreen(
     val name = when (method) {
         Method.Root -> "root"
         Method.Shizuku -> "Shizuku"
-        Method.Guided -> "guided mode"
+        Method.Guided -> "Guided mode"
         Method.Accessibility -> "Automatic"
     }
 
@@ -289,7 +289,7 @@ private fun shizukuPages(
         add(GuidePage(
             title = "Allow Chalaiden",
             body = "Chalaiden asks Shizuku for access. Choose \"Allow all the time\". " +
-                "Then Chalaiden answers bKash for you, behind its own screen.",
+                "Then Chalaiden handles bKash's menu for you.",
             art = { AllowShizukuArt() },
             done = works,
             tip = if (status == ShizukuAccess.Status.Denied) {
@@ -321,7 +321,7 @@ private fun guidedPages(context: Context, canFloat: Boolean, keyboardOn: Boolean
     GuidePage(
         title = "Turn on the Chalaiden keyboard",
         body = "It types each reply into bKash's box for you, and gives you a PIN pad when bKash asks for your PIN. " +
-            "Switch on Chalaiden in Settings → Keyboards. Before each payment, pick it when Chalaiden asks.",
+            "Switch on Chalaiden in Settings › Keyboards. Before each payment, pick it when Chalaiden asks.",
         art = { AutoFillArt() },
         done = keyboardOn,
         action = GuideAction("Open keyboard settings") { ChalaidenKeyboard.openSettings(context) },
@@ -357,25 +357,25 @@ private fun accessibilityPages(context: Context, on: Boolean) = buildList {
                 "Open App info, tap ⋮ at the top right, then Allow restricted settings.",
             art = { RestrictedArt() },
             done = on.takeIf { it },
-            tip = "No ⋮ menu, or no such item? Then your phone doesn't restrict it: go on to the next step. " +
-                "On some phones the item only shows after you've tried the switch once.",
+            tip = "Don't see that option? Your phone doesn't need this step, so go on to the next one. " +
+                "On some phones it only appears after you've tried the switch once.",
             action = GuideAction("Open App info") { ChalaidenAccessibility.openAppInfo(context) },
         ))
     }
     add(GuidePage(
         title = "Switch on Chalaiden",
-        body = "In Settings › Accessibility, open Chalaiden and switch it on. It may be under Downloaded apps " +
-            "or Installed apps. Android warns that it can see your screen: Chalaiden only reads the phone's " +
-            "USSD menu, and only while you pay or check your balance.",
+        body = "In Settings › Accessibility, find Chalaiden (it may be under Downloaded apps or Installed apps) " +
+            "and turn it on. Android will warn that it can see your screen, but Chalaiden only reads bKash's " +
+            "*247# menu, and only while you pay or check your balance.",
         art = { AccessibilityArt() },
         done = on,
         action = GuideAction("Open Accessibility settings") { ChalaidenAccessibility.openSettings(context) },
     ))
     add(GuidePage(
         title = "Your PIN, typed by you",
-        body = "You type your PIN on Chalaiden's PIN pad; it goes straight into bKash's box and Chalaiden keeps " +
-            "nothing. If the bKash app ever warns you about an accessibility service, switch Chalaiden off here " +
-            "and use guided mode or Shizuku instead.",
+        body = "You type your PIN on Chalaiden's PIN pad, and it goes straight to bKash without being saved (unless " +
+            "you turn on One Tap). If the bKash app ever warns you about Accessibility, turn Chalaiden off here " +
+            "and use Guided mode or Shizuku instead.",
         art = { PinArt() },
     ))
 }

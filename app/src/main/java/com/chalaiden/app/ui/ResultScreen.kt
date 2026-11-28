@@ -172,7 +172,7 @@ private fun ResultBody(
                 }
                 amount?.let {
                     Spacer(Modifier.height(20.dp))
-                    Text("$it TK, ${if (outcome is Outcome.Unknown) "status unknown" else "not ${notDone(flow.kind)}"}", style = Type.title, color = soft)
+                    Text("$it TK, ${if (outcome is Outcome.Unknown) "not confirmed" else "not ${notDone(flow.kind)}"}", style = Type.title, color = soft)
                 }
             }
             flow.recipient?.let {
@@ -256,7 +256,7 @@ private fun reason(outcome: Outcome): Pair<String, String>? = when (outcome) {
         it.isBlank() || outcome.menuMissing || it.contains("Connection problem", ignoreCase = true)
     }?.let { (if (outcome.fromBkash) "bKash said" else "What happened") to it }
     // Either bKash's last reply or Chalaiden's note on how the session ended, so not "bKash said".
-    is Outcome.Unknown -> outcome.message.takeIf { it.isNotBlank() }?.let { "What we know" to it }
+    is Outcome.Unknown -> outcome.message.takeIf { it.isNotBlank() }?.let { "Details" to it }
     else -> null
 }
 
@@ -308,16 +308,16 @@ private fun describe(flow: UssdFlow, outcome: Outcome): Pair<String, String?> {
             else -> null
         }
         is Outcome.Failed -> if (outcome.pinSent) {
-            "Not completed" to "bKash turned this down after your PIN. Read its reason before trying again."
+            "Not completed" to "bKash didn't accept this after your PIN. Check its message below before trying again."
         } else if (outcome.menuMissing) {
             "bKash was still busy" to "Nothing was charged. bKash was finishing your last request. Wait a moment, then try again."
         } else {
             val expired = outcome.message.contains("Connection problem", ignoreCase = true)
-            (if (expired) "bKash closed the session" else "Not sent") to
-                "Nothing was charged. " + if (expired) "It waits about 3 minutes for your PIN." else "It stopped before your PIN."
+            (if (expired) "bKash timed out" else "Didn't go through") to
+                "Nothing was charged. " + if (expired) "bKash only waits about 3 minutes for your PIN." else "This stopped before your PIN was sent."
         }
         is Outcome.Unknown -> "Check your balance" to
-            "Chalaiden couldn't tell if this went through. Check your balance before you pay again."
+            "Chalaiden couldn't tell if this went through. Check your balance before trying again."
         Outcome.Cancelled -> "Cancelled" to "Nothing was charged."
     }
 }

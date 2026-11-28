@@ -52,7 +52,7 @@ object Flows {
             kind = FlowKind.Payment,
             steps = listOf(
                 Step.Pick("Payment"),
-                Step.Answer(rx("merchant.*account no"), merchant, "Entering merchant number"),
+                Step.Answer(rx("merchant.*account no"), merchant, "Entering shop number"),
                 Step.Answer(rx("enter amount"), amount, "Entering amount"),
                 Step.Answer(rx("enter reference"), ref, "Adding reference"),
                 Step.Pin,

@@ -244,7 +244,7 @@ fun SetupScreen(
                 Method.Accessibility -> {
                     primary = when {
                         inUse == Method.Accessibility -> "Finish" to finish
-                        a11yOk -> "Use this" to { onChoose(Method.Accessibility) }
+                        a11yOk -> "Use Automatic" to { onChoose(Method.Accessibility) }
                         // Chosen now, so it's in use as soon as the switch is on.
                         else -> "Turn on in Settings" to {
                             onChoose(Method.Accessibility)
@@ -266,7 +266,7 @@ fun SetupScreen(
                     // The keyboard types the replies and the card shows the step; either one is enough to go.
                     val finishAnyway = "Finish without it" to finish
                     when {
-                        inUse != Method.Guided -> primary = "Use guided mode" to { onChoose(Method.Guided) }
+                        inUse != Method.Guided -> primary = "Use Guided mode" to { onChoose(Method.Guided) }
                         !keyboardOn -> {
                             primary = "Turn on Chalaiden keyboard" to { ChalaidenKeyboard.openSettings(context) }
                             secondary = if (canFloat) finishAnyway else "Show me how" to { onGuide(Method.Guided) }
@@ -388,13 +388,13 @@ private fun AutomaticStep(a11yOk: Boolean, inUse: Method?, onHelp: () -> Unit) {
     if (a11yOk) {
         AllSet(
             if (inUse == Method.Accessibility) "Chalaiden answers bKash for you on this phone. You only type your PIN."
-            else "Automatic is on. Tap Use this to switch to it from the way you use now.",
+            else "Automatic is ready. Tap Use Automatic to switch to it.",
         )
         return
     }
     StepHeading(
         "Let Chalaiden answer bKash for you",
-        "Chalaiden goes through bKash's menu behind its own screen. You only type your PIN.",
+        "Chalaiden handles bKash's *247# menu for you. You only type your PIN.",
     )
     AccessibilityArt()
     Spacer(Modifier.height(20.dp))
@@ -448,7 +448,7 @@ private fun WayStep(
             icon = { RootTrio() },
             title = "Root",
             tag = "Rooted phones",
-            detail = if (rootOk) "Root allows Chalaiden. It answers bKash for you, behind its own screen."
+            detail = if (rootOk) "Root is allowed. Chalaiden handles bKash's menu for you."
             else "Chalaiden answers bKash for you. Allow it in your root manager when it asks.",
             selected = choice == Method.Root,
         ) { onPick(Method.Root) }
@@ -561,7 +561,7 @@ private fun Tick(size: Int, fill: Color = tokens.accent, mark: Color = tokens.on
 }
 
 private fun shizukuBody(status: ShizukuAccess.Status, works: Boolean) = if (works) {
-    "Shizuku is running and allows Chalaiden. It answers bKash for you, behind its own screen."
+    "Shizuku is running and Chalaiden is allowed. It handles bKash's menu for you."
 } else when (status) {
     ShizukuAccess.Status.NotInstalled -> "A free app on Google Play that gives Chalaiden the same access as root, so it answers bKash for you. " +
         "It starts over Wireless Debugging, no computer needed on Android 11 and later."
@@ -569,8 +569,8 @@ private fun shizukuBody(status: ShizukuAccess.Status, works: Boolean) = if (work
         "It has to be started again after each restart of the phone."
     ShizukuAccess.Status.Outdated -> "This Shizuku is too old. Update it to version 11 or later."
     ShizukuAccess.Status.NeedsPermission -> "Shizuku is running. Allow Chalaiden when Shizuku asks."
-    ShizukuAccess.Status.Denied -> "Shizuku was told not to allow Chalaiden. Allow it in Shizuku's list of apps."
-    ShizukuAccess.Status.Ready -> "Shizuku allows Chalaiden, but its shell didn't start. Try again."
+    ShizukuAccess.Status.Denied -> "Chalaiden isn't allowed in Shizuku yet. Open Shizuku and turn on access for it."
+    ShizukuAccess.Status.Ready -> "Shizuku is connected, but couldn't start properly. Try again."
 }
 
 private fun shizukuAction(status: ShizukuAccess.Status) = when (status) {

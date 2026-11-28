@@ -119,7 +119,7 @@ fun UpdatesScreen(onBack: () -> Unit) {
                     Updates.State.Checking -> Row(verticalAlignment = Alignment.CenterVertically) {
                         Spinner(t.ink, 18.dp, stroke = 2.dp)
                         Spacer(Modifier.width(12.dp))
-                        Text("Checking GitHub…", style = Type.body, color = t.ink)
+                        Text("Checking for updates…", style = Type.body, color = t.ink)
                     }
                     is Updates.State.Available -> {
                         Text("Version ${s.release.version} is out", style = Type.title, color = t.ink)
@@ -145,7 +145,7 @@ fun UpdatesScreen(onBack: () -> Unit) {
             }
             Spacer(Modifier.height(16.dp))
             Text(
-                "When you're online, Chalaiden asks GitHub for its latest version now and then. Nothing else is sent.",
+                "When you're online, Chalaiden checks GitHub for a new version now and then. Nothing else is sent.",
                 style = Type.label.copy(lineHeight = 20.sp), color = t.inkSoft,
             )
         }

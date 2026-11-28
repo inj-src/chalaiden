@@ -192,7 +192,7 @@ private fun Camera(onRead: (NumberRead) -> Unit, onTypeInstead: () -> Unit, onGa
 
         Spacer(Modifier.weight(0.6f))
         Text(
-            "Point at the number on the shop's bKash card",
+            "Point at the bKash number on the card",
             style = Type.title,
             color = Color.White,
             modifier = Modifier.padding(horizontal = 28.dp),
@@ -320,7 +320,7 @@ private fun NoCamera(onAllow: () -> Unit, onGallery: () -> Unit, onTypeInstead: 
     Column(Modifier.fillMaxSize().background(t.bg).systemBarsPadding().padding(24.dp)) {
         CircleButton(AppIcons.Back, "Back", onClick = onBack)
         Spacer(Modifier.weight(1f))
-        Text("Chalaiden needs the camera to read the shop's number", style = Type.display, color = t.ink)
+        Text("Allow camera access to scan a bKash number", style = Type.display, color = t.ink)
         Spacer(Modifier.height(12.dp))
         Text("The photo stays on your phone. You can also pick a photo or type the number.", style = Type.body, color = t.inkSoft)
         Spacer(Modifier.weight(1f))

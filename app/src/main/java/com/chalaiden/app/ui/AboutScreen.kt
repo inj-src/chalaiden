@@ -58,8 +58,8 @@ fun AboutScreen(onBack: () -> Unit) {
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                "Chalaiden puts its own screen in front of bKash's *247# menu and walks the menu for you, " +
-                    "then shows you bKash's answer. *247# runs over the mobile network, so it works with no data at all.",
+                "Chalaiden goes through bKash's *247# menu for you and shows you bKash's answer. " +
+                    "*247# works over your mobile signal, so you don't need any mobile data.",
                 style = Type.body, color = t.inkSoft,
             )
             Spacer(Modifier.height(24.dp))

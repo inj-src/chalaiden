@@ -472,7 +472,7 @@ fun AutoFillArt() = Art(5200) { c ->
     val t = tokens
     val next = c >= 0.72f
     GuideCardMock(
-        if (next) "Type the amount" else "Type the merchant number",
+        if (next) "Type the amount" else "Type the shop's number",
         if (next) "250" else "01712 345 678",
         chip = "Typed for you",
     )
