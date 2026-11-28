@@ -15,6 +15,15 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
@@ -376,38 +385,29 @@ private fun SimTile(sim: Sim, selected: Boolean, modifier: Modifier = Modifier, 
 @Composable
 private fun AutomaticStep(a11yOk: Boolean, inUse: Method?, onHelp: () -> Unit) {
     val t = tokens
+    if (a11yOk) {
+        AllSet(
+            if (inUse == Method.Accessibility) "Chalaiden answers bKash for you on this phone. You only type your PIN."
+            else "Automatic is on. Tap Use this to switch to it from the way you use now.",
+        )
+        return
+    }
     StepHeading(
         "Let Chalaiden answer bKash for you",
         "Chalaiden goes through bKash's menu behind its own screen. You only type your PIN.",
     )
-    if (a11yOk) {
-        ReadyArt()
-        Spacer(Modifier.height(20.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Tick(22)
-            Spacer(Modifier.width(10.dp))
-            Text("Automatic is on", style = Type.title, color = t.ink)
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            if (inUse == Method.Accessibility) "Nothing else to set up. Chalaiden answers bKash for you on this phone."
-            else "Tap Use this to switch to it from the way you use now.",
-            style = Type.label.copy(lineHeight = 20.sp), color = t.inkSoft,
-        )
-    } else {
-        AccessibilityArt()
-        Spacer(Modifier.height(20.dp))
-        Text(
-            "Turn on Chalaiden once in your phone's Accessibility settings. It only reads the phone's bKash menu.",
-            style = Type.label.copy(lineHeight = 20.sp), color = t.inkSoft,
-        )
-        Text(
-            "Switch greyed out? Show me how",
-            style = Type.label, color = t.ink,
-            modifier = Modifier.padding(top = 4.dp).heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onHelp)
-                .padding(vertical = 14.dp),
-        )
-    }
+    AccessibilityArt()
+    Spacer(Modifier.height(20.dp))
+    Text(
+        "Turn on Chalaiden once in your phone's Accessibility settings. It only reads the phone's bKash menu.",
+        style = Type.label.copy(lineHeight = 20.sp), color = t.inkSoft,
+    )
+    Text(
+        "Switch greyed out? Show me how",
+        style = Type.label, color = t.ink,
+        modifier = Modifier.padding(top = 4.dp).heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onHelp)
+            .padding(vertical = 14.dp),
+    )
 }
 
 @Composable
@@ -520,6 +520,36 @@ private fun Radio(selected: Boolean) {
         Tick(22, fill = t.ink, mark = t.bg)
     } else {
         Box(Modifier.size(22.dp).clip(CircleShape).border(2.dp, t.line, CircleShape))
+    }
+}
+
+/**
+ * Setup done: one big tick and a line, nothing else to read. The tick pops in once; after that only a
+ * soft ring breathes around it, so the screen feels settled rather than busy.
+ */
+@Composable
+private fun AllSet(body: String) {
+    val t = tokens
+    val pop = remember { Animatable(0.6f) }
+    LaunchedEffect(Unit) { pop.animateTo(1f, spring(dampingRatio = 0.45f, stiffness = 400f)) }
+    val ring by rememberInfiniteTransition(label = "allset").animateFloat(
+        0f, 1f, infiniteRepeatable(tween(2600, easing = LinearOutSlowInEasing)), label = "ring",
+    )
+    Column(Modifier.fillMaxWidth().padding(top = 64.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(168.dp), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.size(112.dp)
+                    .graphicsLayer { val s = 1f + 0.4f * ring; scaleX = s; scaleY = s; alpha = 0.5f * (1f - ring) }
+                    .border(2.dp, t.accent, CircleShape),
+            )
+            Box(Modifier.size(112.dp).clip(CircleShape).background(t.accent.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+                Box(Modifier.graphicsLayer { scaleX = pop.value; scaleY = pop.value }) { Tick(72) }
+            }
+        }
+        Spacer(Modifier.height(24.dp))
+        Text("You're all set", style = Type.display, color = t.ink, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(10.dp))
+        Text(body, style = Type.body, color = t.inkSoft, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 12.dp))
     }
 }
 
