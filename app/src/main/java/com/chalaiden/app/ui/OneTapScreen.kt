@@ -117,8 +117,8 @@ fun OneTapScreen(guided: Boolean, change: Boolean, onBack: () -> Unit) {
             // Still on when the sensor is out for now, so it can be turned off.
             saved -> OnState(onChange = { if (readiness == OneTap.Readiness.Ready) entering = true }, changeable = readiness == OneTap.Readiness.Ready, onTurnOff = { OneTap.forget(context) }, guided = guided)
             readiness == OneTap.Readiness.Unavailable -> Blocked(
-                "One Tap can't work on this phone",
-                "It needs a fingerprint sensor that Android trusts for payments. You can keep typing your PIN.",
+                "One Tap isn't available on this phone",
+                "This phone doesn't have a fingerprint sensor secure enough for One Tap. You can still type your PIN as usual.",
                 action = null,
             )
             else -> Intro(guided, onStart = { entering = true })
@@ -138,13 +138,13 @@ private fun Intro(guided: Boolean, onStart: () -> Unit) {
             Text("Pay with your fingerprint", style = Type.display, color = t.ink)
             Spacer(Modifier.height(10.dp))
             Text(
-                "Save your bKash PIN once. After that, a touch sends it for you. You can still type it any time.",
+                "Save your bKash PIN once, then just use your fingerprint. You can still type your PIN any time.",
                 style = Type.body, color = t.inkSoft,
             )
             Spacer(Modifier.height(24.dp))
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 if (guided) GuidedNote()
-                Fact(AppIcons.Lock, "Your PIN is locked inside this phone and only opens with your fingerprint. It goes only to bKash.")
+                Fact(AppIcons.Lock, "Your PIN stays locked on this phone, unlocks only with your fingerprint, and only goes to bKash.")
                 Fact(AppIcons.Alert, "Anyone whose fingerprint is on this phone can pay with it.")
             }
         }
@@ -166,9 +166,9 @@ private fun OnState(onChange: () -> Unit, changeable: Boolean, onTurnOff: () -> 
         Spacer(Modifier.height(10.dp))
         val suspect by OneTap.suspect.collectAsState()
         Text(
-            if (suspect) "bKash refused this saved PIN last time, so Chalaiden asks you to type it until you change it."
-            else "Paying, sending, cashing out and checking your balance ask for your fingerprint. " +
-                "Tap Use PIN in that box to type it instead.",
+            if (suspect) "bKash didn't accept your saved PIN last time. Change it below to use your fingerprint again."
+            else "Use your fingerprint to pay, send money, cash out or check your balance. " +
+                "To type your PIN instead, tap Use PIN when the fingerprint box opens.",
             style = Type.body, color = if (suspect) t.error else t.inkSoft,
         )
         if (guided) {
@@ -183,7 +183,7 @@ private fun OnState(onChange: () -> Unit, changeable: Boolean, onTurnOff: () -> 
         }
         Spacer(Modifier.height(16.dp))
         Text(
-            "Adding a fingerprint to this phone removes the saved PIN, so only fingers that were here when you saved it can pay.",
+            "If you add a new fingerprint to this phone, the saved PIN is removed to keep your account safe.",
             style = Type.label.copy(lineHeight = 20.sp), color = t.inkSoft,
         )
     }
@@ -216,12 +216,12 @@ private fun SavePin(onSaved: () -> Unit) {
     fun save() {
         val activity = context.fragmentActivity() ?: return
         val cipher = runCatching { OneTap.encrypter(context) }.getOrElse {
-            problem = "This phone couldn't make a lock for the PIN."
+            problem = "Your phone couldn't lock your PIN. Try again."
             return
         }
         val entered = pin
         asking = true
-        request.prompt = activity.askFingerprint("Save your PIN", "Touch the sensor to lock it to your fingerprint", "Cancel", cipher, confirm = true) { touch ->
+        request.prompt = activity.askFingerprint("Save your PIN", "Confirm with your fingerprint to save it", "Cancel", cipher, confirm = true) { touch ->
             request.prompt = null
             if (request.gone) return@askFingerprint
             asking = false
@@ -244,7 +244,7 @@ private fun SavePin(onSaved: () -> Unit) {
         // Capped and scrolling, so a large font size can't squeeze the keypad.
         Column(Modifier.heightIn(max = 96.dp).verticalScroll(rememberScrollState())) {
             Text(
-                problem ?: "It's locked to your fingerprint. If bKash ever says it's wrong, Chalaiden asks you what to do with it.",
+                problem ?: "Locked to your fingerprint. If bKash ever says your PIN is wrong, you can change or remove it.",
                 style = Type.label.copy(lineHeight = 20.sp), color = if (problem != null) t.error else t.inkSoft,
                 // Only a problem is read out as it appears, not the hint coming back on the next digit.
                 modifier = if (problem != null) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier,
@@ -286,7 +286,7 @@ private fun Blocked(title: String, body: String, action: Pair<String, () -> Unit
 @Composable
 private fun GuidedNote() = Fact(
     AppIcons.Alert,
-    "You're using Guided mode, where you type into bKash's own box. One Tap works once Chalaiden answers bKash for you.",
+    "One Tap doesn't work in Guided mode, because you type your PIN into bKash yourself. Switch from Guided mode to use it.",
 )
 
 @Composable

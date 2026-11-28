@@ -515,8 +515,8 @@ class MainActivity : FragmentActivity() {
                 if (RunCover.onScreen.value || !ready() || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@launch
                 val cipher = OneTap.decrypter(this@MainActivity)
                 if (cipher == null) {
-                    OneTap.pinNotice.value = if (OneTap.saved.value) "The saved PIN couldn't be opened. Type your PIN. If this keeps happening, turn One Tap off and on again from the menu on Home."
-                    else "The saved PIN can't be opened any more, so it was removed. Type your PIN."
+                    OneTap.pinNotice.value = if (OneTap.saved.value) "Couldn't unlock your saved PIN. Type it this time. If this keeps happening, turn One Tap off and on again from the top-right menu."
+                    else "Your saved PIN stopped working and was removed. Type your PIN."
                     return@launch
                 }
                 val amount = flow.amount?.toLongOrNull()?.let { "%,d TK".format(it) }
@@ -541,7 +541,7 @@ class MainActivity : FragmentActivity() {
                         is Touch.Unlocked -> {
                             val pin = OneTap.read(this@MainActivity, touch.cipher)
                             if (pin == null) {
-                                OneTap.pinNotice.value = "The saved PIN couldn't be opened. Type your PIN."
+                                OneTap.pinNotice.value = "Couldn't unlock your saved PIN. Type it this time."
                             } else if (ready()) {
                                 OneTap.usedThisRun = true
                                 PinEntry.reset()
@@ -579,7 +579,7 @@ class MainActivity : FragmentActivity() {
                     startActivity(Dialer.callIntent(this@MainActivity, sim))
                 }.onFailure {
                     UssdSession.clear()
-                    replaceTop(Screen.Result(flow, Outcome.Failed("Couldn't open the bKash menu: ${it.message}", pinSent = false, fromBkash = false)))
+                    replaceTop(Screen.Result(flow, Outcome.Failed("Couldn't dial *247#. Check your SIM and phone permissions, then try again.", pinSent = false, fromBkash = false)))
                 }
             }
         }
@@ -614,7 +614,7 @@ class MainActivity : FragmentActivity() {
                 askedFor = runId
                 // bKash refused this PIN last time: no sheet by itself, another wrong PIN brings its lock closer.
                 if (OneTap.suspect.value) {
-                    OneTap.pinNotice.value = "bKash refused your saved PIN last time. Type your PIN, or change it in One Tap, in the menu on Home."
+                    OneTap.pinNotice.value = "bKash didn't accept your saved PIN last time. Type it here, or change it in One Tap from the top-right menu."
                 } else {
                     payWithFingerprint(s.flow, settle = 350)
                 }
@@ -679,7 +679,7 @@ class MainActivity : FragmentActivity() {
                   onSetUp = { offering = false; push(Screen.OneTap()) },
                   onLater = {
                       offering = false
-                      Toast.makeText(this, "One Tap is always in the ⋮ menu on Home.", Toast.LENGTH_LONG).show()
+                      Toast.makeText(this, "You can turn on One Tap any time from the top-right menu.", Toast.LENGTH_LONG).show()
                   },
               )
               HomeScreen(

@@ -46,7 +46,7 @@ import kotlinx.coroutines.launch
 fun OneTapOfferSheet(onSetUp: () -> Unit, onLater: () -> Unit) = ChoiceSheet(
     art = { color -> FingerprintTrace(color, Modifier.height(56.dp)) },
     title = "Pay with your fingerprint",
-    body = "Save your bKash PIN once, and a touch sends it after that. You can still type it any time.",
+    body = "Save your bKash PIN once, then just use your fingerprint. You can still type your PIN any time.",
     primary = "Set up One Tap" to onSetUp,
     secondary = "Not now" to onLater,
     onDismiss = onLater,
@@ -60,7 +60,7 @@ fun OneTapOfferSheet(onSetUp: () -> Unit, onLater: () -> Unit) = ChoiceSheet(
 fun WrongPinSheet(onChange: () -> Unit, onRemove: () -> Unit, onKeep: () -> Unit) = ChoiceSheet(
     art = null,
     title = "Your saved PIN didn't work",
-    body = "bKash says the PIN is invalid. That was the PIN One Tap saved, so it will fail again until you change it.",
+    body = "bKash didn't accept the PIN saved in One Tap, so it will keep failing. Change it, or remove it and type your PIN.",
     primary = "Change saved PIN" to onChange,
     secondary = "Remove it" to onRemove,
     onDismiss = onKeep,

@@ -40,7 +40,7 @@ fun FragmentActivity.askFingerprint(
         object : BiometricPrompt.AuthenticationCallback() {
             override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                 val unlocked = result.cryptoObject?.cipher
-                onResult(if (unlocked != null) Touch.Unlocked(unlocked) else Touch.Failed("Your fingerprint couldn't open the saved PIN."))
+                onResult(if (unlocked != null) Touch.Unlocked(unlocked) else Touch.Failed("Couldn't confirm your fingerprint."))
             }
 
             override fun onAuthenticationError(code: Int, message: CharSequence) {

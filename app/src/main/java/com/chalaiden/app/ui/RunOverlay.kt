@@ -222,7 +222,7 @@ private fun PinStep(flow: UssdFlow) {
                 Icon(AppIcons.Lock, contentDescription = null, tint = t.inkSoft, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    if (oneTap) "Goes only to bKash." else "Goes only to bKash. Never saved.",
+                    if (oneTap) "Sent only to bKash." else "Sent only to bKash. Never saved.",
                     style = Type.label.copy(fontSize = 13.sp), color = t.inkSoft, maxLines = 1,
                 )
             }
@@ -311,7 +311,7 @@ private fun Progress(flow: UssdFlow, current: Int) {
         Spacer(Modifier.weight(1f))
         // Down by Cancel, where the eye and thumb already are.
         Text(
-            "Keep Chalaiden open · about 10 s",
+            "Keep Chalaiden open · about 10 seconds",
             style = Type.label, color = t.inkSoft, textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
         )
@@ -354,7 +354,7 @@ private fun FeeStep(flow: UssdFlow, state: RunState.AwaitingPin) {
         }
         val secs = (left / 1000).toInt()
         Text(
-            if (secs > 0) "bKash closes this in %d:%02d".format(secs / 60, secs % 60) else "bKash closed this",
+            if (secs > 0) "Confirm within %d:%02d".format(secs / 60, secs % 60) else "bKash timed out",
             style = Type.label,
             color = if (secs in 1..20) t.error else t.inkSoft,
             modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 12.dp),
