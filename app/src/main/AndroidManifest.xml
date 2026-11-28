@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- The run screen covers the phone app's USSD dialogs (granted by root or Shizuku); guided mode's helper card sits above them. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Only to ask GitHub for the latest release (Updates). Payments never use the internet. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- To tell "Shizuku isn't installed" from "Shizuku isn't running" (package visibility, API 30+). -->
     <queries>

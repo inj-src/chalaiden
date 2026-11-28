@@ -114,6 +114,9 @@ fun HomeScreen(
     onBalance: () -> Unit,
     onSetup: () -> Unit,
     onAbout: () -> Unit = {},
+    onUpdates: () -> Unit = {},
+    /** A newer version is on GitHub: Updates in the menu gets a dot. */
+    updateAvailable: Boolean = false,
     keyboardOff: Boolean = false,
     onFixKeyboard: () -> Unit = {},
     /** Which of the [HomeDesign]s is up top, and where a swipe to another one is kept. */
@@ -129,7 +132,7 @@ fun HomeScreen(
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
             Column {
                 Box(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 20.dp)) {
-                    HomeMenu(onSetup, onAbout, Modifier.align(Alignment.CenterEnd).offset(x = 12.dp))
+                    HomeMenu(onSetup, onAbout, onUpdates, updateAvailable, Modifier.align(Alignment.CenterEnd).offset(x = 12.dp))
                 }
                 // The brand comes in more than one design; a swipe left or right changes it. Edge to edge, so a
                 // design slides off the screen rather than into the margin.
@@ -479,9 +482,9 @@ private fun carrierOf(sim: Sim): String? = sim.carrier.takeIf { it.isNotBlank() 
 
 private fun simName(sim: Sim) = listOfNotNull("SIM ${sim.slot + 1}", carrierOf(sim)).joinToString(", ")
 
-/** The ⋮ button in Home's top-right corner and its menu: Setup (always one tap away from here) and About. */
+/** The ⋮ button in Home's top-right corner and its menu: Setup (always one tap away from here), Updates and About. */
 @Composable
-private fun HomeMenu(onSetup: () -> Unit, onAbout: () -> Unit, modifier: Modifier = Modifier) {
+private fun HomeMenu(onSetup: () -> Unit, onAbout: () -> Unit, onUpdates: () -> Unit, updateAvailable: Boolean, modifier: Modifier = Modifier) {
     val t = tokens
     var open by remember { mutableStateOf(false) }
     Box(modifier) {
@@ -503,6 +506,14 @@ private fun HomeMenu(onSetup: () -> Unit, onAbout: () -> Unit, modifier: Modifie
             DropdownMenuItem(
                 text = { Text("Change method", style = Type.body, color = t.ink) },
                 onClick = { open = false; onSetup() },
+                modifier = Modifier.widthIn(min = 220.dp).heightIn(min = 48.dp),
+            )
+            DropdownMenuItem(
+                text = { Text("Updates", style = Type.body, color = t.ink) },
+                trailingIcon = if (updateAvailable) {
+                    { Box(Modifier.size(8.dp).clip(CircleShape).background(t.accent)) }
+                } else null,
+                onClick = { open = false; onUpdates() },
                 modifier = Modifier.widthIn(min = 220.dp).heightIn(min = 48.dp),
             )
             DropdownMenuItem(

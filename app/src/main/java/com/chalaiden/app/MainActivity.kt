@@ -62,6 +62,9 @@ import com.chalaiden.app.ui.ScanScreen
 import com.chalaiden.app.ui.SetupScreen
 import com.chalaiden.app.ui.MethodGuideScreen
 import com.chalaiden.app.ui.AboutScreen
+import com.chalaiden.app.ui.UpdateSheet
+import com.chalaiden.app.ui.UpdatesScreen
+import com.chalaiden.app.update.Updates
 import com.chalaiden.app.ui.theme.ChalaidenTheme
 import com.chalaiden.app.vendor.PhoneQuirks
 import com.chalaiden.app.ussd.Backend
@@ -92,6 +95,7 @@ private sealed interface Screen {
     /** Step-by-step set-up for one way of answering bKash, opened from Setup. */
     data class MethodGuide(val method: Method) : Screen
     data object About : Screen
+    data object Updates : Screen
 }
 
 class MainActivity : ComponentActivity() {
@@ -169,6 +173,8 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         GuideSession.setAppVisible(true)
         checkSetup()
+        // Asks GitHub at most every few hours; offline it fails quietly.
+        lifecycleScope.launch { Updates.check(this@MainActivity) }
     }
 
     override fun onPause() {
@@ -326,6 +332,16 @@ class MainActivity : ComponentActivity() {
         if (BuildConfig.DEBUG && intent?.getBooleanExtra("sims_probe", false) == true) {
             java.io.File(filesDir, "sims.log").writeText(Dialer.probe(this))
         }
+        // Debug builds only: a made-up newer version, to see the update sheet and the Updates screen.
+        //   adb shell am start -n com.chalaiden.app/.MainActivity --es update_demo 0.2.0
+        if (BuildConfig.DEBUG && intent?.hasExtra("update_demo") == true) {
+            val v = intent.getStringExtra("update_demo").orEmpty().ifBlank { "9.9.9" }
+            com.chalaiden.app.update.Updates.debugShow(
+                this,
+                com.chalaiden.app.update.Release(v, "## What's new\n- Check your balance with one tap\n- An About page in the menu\n- Works with Infinix phones", "https://github.com/inj-src/chalaiden/releases", null),
+            )
+            stack.clear(); stack += Screen.Home
+        }
         if (BuildConfig.DEBUG && intent?.hasExtra("ussd_probe") == true) {
             com.chalaiden.app.ussd.UssdProbe.send(this, intent.getStringExtra("ussd_probe").orEmpty(), simId())
         }
@@ -479,6 +495,12 @@ class MainActivity : ComponentActivity() {
         when (screen) {
             Screen.Home -> DebugFrame(debugFontScale, debugWidth) {
               val fake = debugHome
+              val update by Updates.state.collectAsState()
+              val release = (update as? Updates.State.Available)?.release
+              var sheetGone by remember { mutableStateOf(false) }
+              if (release != null && fake == null && !sheetGone && !Updates.snoozed(this)) {
+                  UpdateSheet(release) { Updates.snooze(this); sheetGone = true }
+              }
               HomeScreen(
                 sims = fake?.sims ?: Dialer.sims(this),
                 simId = if (fake != null) fake.simId else setupTick.let { simId() }, // re-read after a SIM change
@@ -492,6 +514,8 @@ class MainActivity : ComponentActivity() {
                 onBalance = { start(Flows.balance()) },
                 onSetup = { push(Screen.Setup(then = null)) },
                 onAbout = { push(Screen.About) },
+                onUpdates = { push(Screen.Updates) },
+                updateAvailable = release != null,
                 design = prefs.homeDesign,
                 onDesign = { prefs.homeDesign = it },
               )
@@ -567,6 +591,7 @@ class MainActivity : ComponentActivity() {
                 onBack = ::pop,
             )
             Screen.About -> AboutScreen(onBack = ::pop)
+            Screen.Updates -> UpdatesScreen(onBack = ::pop)
         }
     }
 
