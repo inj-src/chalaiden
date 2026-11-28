@@ -13,8 +13,8 @@ session runbook, what to look for, where fixes go, and what is already known.
 These come before any test result.
 
 1. **Never send a PIN, and never finish a payment, send-money, cash-out or balance check.** Walk
-   bKash's menu only as far as its `Enter PIN` prompt, then **Cancel**. Never press **Hold to pay /
-   Hold to check**. Only the phone's owner ever types their PIN, and not during these tests.
+   bKash's menu only as far as its `Enter PIN` prompt, then **Cancel**. Never press **Hold to pay** (or
+   send, or cash out), or **Check balance**, which is a plain tap. Only the phone's owner ever types their PIN, and not during these tests.
    - Chalaiden opens `*247#` when the first PIN digit goes in (the "warm-up"). To start a walk, tap
      **one** digit on Chalaiden's PIN pad. That digit stays on the pad and goes nowhere: nothing reaches
      bKash until the hold completes. Then press Cancel.

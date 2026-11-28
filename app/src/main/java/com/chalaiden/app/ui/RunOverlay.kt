@@ -52,6 +52,7 @@ import com.chalaiden.app.ui.components.NumberRail
 import com.chalaiden.app.ui.components.PhoneGroups
 import com.chalaiden.app.ui.components.PinDots
 import com.chalaiden.app.ui.components.PopIn
+import com.chalaiden.app.ui.components.PrimaryButton
 import com.chalaiden.app.ui.components.Spinner
 import com.chalaiden.app.ui.components.TextAction
 import com.chalaiden.app.ui.theme.Type
@@ -149,12 +150,12 @@ private fun holdLabel(kind: FlowKind) = when (kind) {
     FlowKind.Payment -> "Hold to pay"
     FlowKind.SendMoney -> "Hold to send"
     FlowKind.CashOut -> "Hold to cash out"
-    FlowKind.Balance -> "Hold to check"
+    FlowKind.Balance -> "Check balance" // tapped, not held: see PinStep
 }
 
 /**
- * PIN first, one hold. The first digit starts walking bKash's menu, so its summary is usually up by
- * the time the hold completes. The PIN goes in only once bKash's summary matches; letting go of the
+ * PIN first, one hold (a plain tap for a balance check, where no money moves). The first digit starts
+ * walking bKash's menu, so its summary is usually up by the time the hold completes. The PIN goes in only once bKash's summary matches; letting go of the
  * hold early leaves the menu warm, and Cancel or back closes it.
  */
 @Composable
@@ -194,16 +195,26 @@ private fun PinStep(flow: UssdFlow) {
             modifier = Modifier.weight(1f).padding(top = 16.dp),
         )
         Spacer(Modifier.height(12.dp))
-        HoldToConfirm(
-            holdLabel(flow.kind),
-            enabled = pin.length == PIN_LENGTH,
-            // Normally already warm from the first digit; dials again if bKash dropped an idle menu.
-            onHoldStart = UssdSession::warmUp,
-        ) {
+        fun send() {
             val entered = PinEntry.pin
-            if (entered.length != PIN_LENGTH) return@HoldToConfirm
+            if (entered.length != PIN_LENGTH) return
             PinEntry.reset()
             UssdSession.confirm(entered)
+        }
+        if (flow.kind == FlowKind.Balance) {
+            // No money moves, so a tap is enough. warmUp first, as the hold's finger-down does: it
+            // dials again if bKash dropped an idle menu, and the session it starts takes the PIN at once.
+            PrimaryButton("Check balance", enabled = pin.length == PIN_LENGTH) {
+                UssdSession.warmUp()
+                send()
+            }
+        } else {
+            HoldToConfirm(
+                holdLabel(flow.kind),
+                enabled = pin.length == PIN_LENGTH,
+                // Normally already warm from the first digit; dials again if bKash dropped an idle menu.
+                onHoldStart = UssdSession::warmUp,
+            ) { send() }
         }
         TextAction("Cancel", Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp)) {
             PinEntry.reset()
