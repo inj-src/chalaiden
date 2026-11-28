@@ -47,6 +47,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
@@ -140,7 +144,7 @@ fun HomeScreen(
                     Image(
                         painterResource(R.drawable.logo_mark),
                         contentDescription = "Chalaiden",
-                        modifier = Modifier.height(28.dp).aspectRatio(42f / 36f).semantics { heading() },
+                        modifier = Modifier.padding(start = 6.dp).height(28.dp).aspectRatio(42f / 36f).semantics { heading() },
                     )
                     Spacer(Modifier.weight(1f))
                     HomeMenu(onSetup, onAbout, onUpdates, updateAvailable, Modifier.offset(x = 12.dp))
@@ -271,42 +275,62 @@ private fun ChatDesign(active: Boolean) {
         typing = false
         reply.animateTo(1f, Bounce)
     }
-    Column(Modifier.fillMaxWidth()) {
-        // Every bubble is laid out from the start, so nothing shifts as they arrive.
-        Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) { }, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Asked("bKash e taka pathabo, data nai, app o nai…", RoundedCornerShape(20.dp, 20.dp, 20.dp, 6.dp)) { first.value }
-            Asked("ki korbo?", RoundedCornerShape(6.dp, 20.dp, 20.dp, 20.dp)) { second.value }
-            Spacer(Modifier.height(6.dp))
-            Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.Bottom) {
-                Box(contentAlignment = Alignment.BottomEnd) {
-                    // One line always: in a narrow window (a floating window, a small phone at a large
-                    // display size) the text steps down to fit rather than being cut off mid-word.
-                    BasicText(
-                        "chalaiden.",
-                        style = Type.display.copy(
-                            fontWeight = FontWeight.Bold, fontSize = 32.sp.capScale(), lineHeight = 40.sp.capScale(),
-                            letterSpacing = (-1.0).sp, color = t.onAccent,
-                        ),
-                        maxLines = 1,
-                        softWrap = false,
-                        autoSize = TextAutoSize.StepBased(minFontSize = 16.sp, maxFontSize = 32.sp.capScale(), stepSize = 1.sp),
-                        modifier = Modifier
-                            .arriving({ reply.value }, TransformOrigin(1f, 1f))
-                            .clip(RoundedCornerShape(26.dp, 26.dp, 6.dp, 26.dp))
-                            .background(t.accent)
-                            .padding(horizontal = 20.dp, vertical = 10.dp),
-                    )
-                    if (typing) TypingDots()
+    // As tall as the big wordmark design, the room going above the bubbles, so swiping between the
+    // two doesn't move the SIM row and the actions under them.
+    val measurer = rememberTextMeasurer()
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val wordmark = with(LocalDensity.current) {
+            val fixed = Density(density, fontScale = 1f)
+            measurer.measure("chalai\nden", bigTypeStyle(maxWidth), softWrap = false, density = fixed).size.height.toDp()
+        }
+        Column(Modifier.fillMaxWidth().heightIn(min = wordmark), verticalArrangement = Arrangement.Bottom) {
+            // Every bubble is laid out from the start, so nothing shifts as they arrive.
+            Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) { }, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Asked("bKash e taka pathabo, data nai, app o nai…", RoundedCornerShape(20.dp, 20.dp, 20.dp, 6.dp)) { first.value }
+                Asked("ki korbo?", RoundedCornerShape(6.dp, 20.dp, 20.dp, 20.dp)) { second.value }
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.Bottom) {
+                    Box(contentAlignment = Alignment.BottomEnd) {
+                        // One line always: in a narrow window (a floating window, a small phone at a large
+                        // display size) the text steps down to fit rather than being cut off mid-word.
+                        BasicText(
+                            "chalaiden.",
+                            style = Type.display.copy(
+                                fontWeight = FontWeight.Bold, fontSize = 32.sp.capScale(), lineHeight = 40.sp.capScale(),
+                                letterSpacing = (-1.0).sp, color = t.onAccent,
+                            ),
+                            maxLines = 1,
+                            softWrap = false,
+                            autoSize = TextAutoSize.StepBased(minFontSize = 16.sp, maxFontSize = 32.sp.capScale(), stepSize = 1.sp),
+                            modifier = Modifier
+                                .arriving({ reply.value }, TransformOrigin(1f, 1f))
+                                .clip(RoundedCornerShape(26.dp, 26.dp, 6.dp, 26.dp))
+                                .background(t.accent)
+                                .padding(horizontal = 20.dp, vertical = 10.dp),
+                        )
+                        if (typing) TypingDots()
+                    }
                 }
+                Text(
+                    clockNow(),
+                    style = Type.label.copy(fontSize = 12.sp),
+                    color = t.inkSoft,
+                    modifier = Modifier.align(Alignment.End).padding(end = 4.dp).graphicsLayer { alpha = reply.value.coerceIn(0f, 1f) },
+                )
             }
-            Text(
-                clockNow(),
-                style = Type.label.copy(fontSize = 12.sp),
-                color = t.inkSoft,
-                modifier = Modifier.align(Alignment.End).padding(end = 4.dp).graphicsLayer { alpha = reply.value.coerceIn(0f, 1f) },
-            )
         }
     }
+}
+
+/** The big wordmark's type, filling [width]. The chat design measures it too, to stand as tall. */
+private fun bigTypeSize(width: Dp) = (width.value * 0.335f).sp
+
+private fun bigTypeStyle(width: Dp): TextStyle {
+    val size = bigTypeSize(width)
+    return Type.wordmark.copy(
+        fontWeight = FontWeight.ExtraBold, fontSize = size, lineHeight = size * 0.86f, letterSpacing = (-0.075).em,
+        lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both),
+    )
 }
 
 /**
@@ -325,11 +349,8 @@ private fun BigTypeDesign(active: Boolean) {
         // Part of the picture: it fills the width at any text size.
         FixedTextScale {
             BoxWithConstraints(Modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = "Chalaiden"; heading() }) {
-                val size = (maxWidth.value * 0.335f).sp
-                val style = Type.wordmark.copy(
-                    fontWeight = FontWeight.ExtraBold, fontSize = size, lineHeight = size * 0.86f, letterSpacing = (-0.075).em,
-                    lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both),
-                )
+                val size = bigTypeSize(maxWidth)
+                val style = bigTypeStyle(maxWidth)
                 // One text, so the two lines share one tight leading; the dot rides on the baseline after "den".
                 Text(
                     buildAnnotatedString {
