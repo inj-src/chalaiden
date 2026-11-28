@@ -13,7 +13,9 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.security.GeneralSecurityException
 import java.security.KeyStore
+import java.security.ProviderException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -102,6 +104,7 @@ object OneTap {
             .putString(IV, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
             .apply()
         pending = null
+        suspect(context, false)
         if (old != null && old != alias) runCatching { keyStore().deleteEntry(old) }
         _saved.value = true
     }
@@ -124,6 +127,10 @@ object OneTap {
         } catch (e: KeyPermanentlyInvalidatedException) {
             forget(context)
             null
+        } catch (e: GeneralSecurityException) {
+            null // a keystore hiccup (some phones' keystores throw oddly): the PIN stays, typed this time
+        } catch (e: ProviderException) {
+            null
         }
     }
 
@@ -135,10 +142,19 @@ object OneTap {
 
     /** Removes the saved PIN and its key. */
     fun forget(context: Context) {
-        prefs(context).edit().remove(PIN).remove(IV).remove(ALIAS).apply()
+        prefs(context).edit().remove(PIN).remove(IV).remove(ALIAS).remove(SUSPECT).apply()
         listOf(KEY_A, KEY_B).forEach { runCatching { keyStore().deleteEntry(it) } }
         _saved.value = false
     }
+
+    /**
+     * bKash refused the saved PIN on its last use and it hasn't been changed since. The fingerprint sheet
+     * then stops opening by itself: one more wrong PIN brings bKash's lock closer. Saving a PIN, or bKash
+     * accepting this one, clears it.
+     */
+    fun suspect(context: Context): Boolean = prefs(context).getBoolean(SUSPECT, false)
+
+    fun suspect(context: Context, value: Boolean) = prefs(context).edit().putBoolean(SUSPECT, value).apply()
 
     /**
      * bKash's answer says the PIN was wrong: "The Mobile PIN is invalid." (*247#, 2026-11). Only then
@@ -180,4 +196,5 @@ object OneTap {
     private const val TRANSFORMATION = "AES/GCM/NoPadding"
     private const val PIN = "pin"
     private const val IV = "iv"
+    private const val SUSPECT = "suspect"
 }

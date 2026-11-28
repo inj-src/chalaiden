@@ -1,5 +1,11 @@
 package com.chalaiden.app.ui
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -76,12 +82,22 @@ private fun ChoiceSheet(
     val t = tokens
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    // Slide away first, then act: the next screen doesn't cut the sheet off mid-motion.
+    // Slide away first, then act: the next screen doesn't cut the sheet off mid-motion. The first choice
+    // wins; taps during the slide are ignored, so two choices can never both happen.
+    var closing by remember { mutableStateOf(false) }
     fun close(then: () -> Unit) {
-        scope.launch { sheet.hide() }.invokeOnCompletion { then() }
+        if (closing) return
+        closing = true
+        scope.launch {
+            try {
+                sheet.hide()
+            } finally {
+                then()
+            }
+        }
     }
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!closing) onDismiss() },
         sheetState = sheet,
         containerColor = t.surface,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
@@ -89,7 +105,8 @@ private fun ChoiceSheet(
         val centred = art != null
         val align = if (centred) TextAlign.Center else TextAlign.Start
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding().padding(bottom = 8.dp),
+            // Scrolls at large font sizes, so the actions can always be reached.
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).navigationBarsPadding().padding(bottom = 8.dp),
             horizontalAlignment = if (centred) Alignment.CenterHorizontally else Alignment.Start,
         ) {
             art?.let {

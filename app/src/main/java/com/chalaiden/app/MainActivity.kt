@@ -1,5 +1,9 @@
 package com.chalaiden.app
 
+import com.chalaiden.app.ui.components.PhoneGroups
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.lifecycle.Lifecycle
 import android.widget.Toast
 import android.content.Intent
 import android.graphics.Bitmap
@@ -221,6 +225,8 @@ class MainActivity : FragmentActivity() {
     override fun onDestroy() {
         stopWatchingShizuku?.invoke()
         stopWatchingShizuku = null
+        prompt?.cancel()
+        OneTap.prompting.value = false // a fingerprint sheet that never called back must not keep the cover down
         super.onDestroy()
     }
 
@@ -439,7 +445,9 @@ class MainActivity : FragmentActivity() {
     /** Shows the PIN screen. Nothing is dialled until "Hold to pay" is pressed (see [drive]). */
     private fun run(flow: UssdFlow) {
         PinEntry.reset()
+        runId++
         askedFor = null
+        prompt?.cancel()
         OneTap.usedThisRun = false
         OneTap.pinNotice.value = null
         OneTap.wrongPin.value = false
@@ -447,8 +455,14 @@ class MainActivity : FragmentActivity() {
         push(Screen.Running)
     }
 
+    /** Counts runs, so a fingerprint sheet that was on its way for one run never sends a PIN into the next. */
+    private var runId = 0
+
     /** The run One Tap's sheet has opened for by itself; it opens once per run, then only when asked. */
-    private var askedFor: UssdFlow? = null
+    private var askedFor: Int? = null
+
+    /** The fingerprint sheet on its way (waiting for the cover to go); a key press cancels it. */
+    private var prompt: Job? = null
 
     /**
      * One Tap: the phone's fingerprint sheet, naming what it's for. A match opens the saved PIN and sends
@@ -457,50 +471,71 @@ class MainActivity : FragmentActivity() {
      */
     private fun payWithFingerprint(flow: UssdFlow, settle: Long) {
         if (OneTap.prompting.value || !OneTap.saved.value) return
-        val ready = { UssdSession.current.value?.let { it.flow == flow && !it.confirmed && it.state == RunState.Ready } == true }
+        val run = runId
+        val ready = {
+            run == runId && stack.lastOrNull() == Screen.Running && PinEntry.pin.isEmpty() &&
+                UssdSession.current.value?.let { it.flow == flow && !it.confirmed && it.state == RunState.Ready } == true
+        }
         if (!ready()) return
-        OneTap.prompting.value = true // keeps the cover down from now on
-        lifecycleScope.launch {
-            delay(settle) // the PIN screen sliding in, or the cover fading out
-            val cipher = OneTap.decrypter(this@MainActivity)
-            if (cipher == null || !ready()) {
-                OneTap.prompting.value = false
-                if (cipher == null) OneTap.pinNotice.value = "Your phone's fingerprints changed, so the saved PIN was removed. Type your PIN."
-                return@launch
-            }
-            val amount = flow.amount?.toLongOrNull()?.let { "%,d TK".format(it) }
-            val title = when (flow.kind) {
-                FlowKind.Payment -> "Pay $amount?"
-                FlowKind.SendMoney -> "Send $amount?"
-                FlowKind.CashOut -> "Cash out $amount?"
-                FlowKind.Balance -> "Check your balance?"
-            }
-            askFingerprint(
-                title = title,
-                subtitle = flow.recipient?.let { "To $it" },
-                cancel = "Use PIN",
-                cipher = cipher,
-                confirm = flow.kind != FlowKind.Balance,
-            ) { touch ->
-                OneTap.prompting.value = false
-                when (touch) {
-                    is Touch.Unlocked -> {
-                        val pin = OneTap.read(this@MainActivity, touch.cipher)
-                        if (pin == null) {
-                            OneTap.pinNotice.value = "The saved PIN couldn't be opened. Type your PIN."
-                        } else if (ready()) {
-                            OneTap.usedThisRun = true
-                            PinEntry.reset()
-                            // As the hold does: start walking the menu, and send the PIN once bKash's summary matches.
-                            UssdSession.warmUp()
-                            UssdSession.confirm(pin)
-                        }
-                    }
-                    Touch.Declined -> Unit
-                    is Touch.Failed -> OneTap.pinNotice.value = "${touch.message.trimEnd('.')}. Type your PIN."
+        OneTap.prompting.value = true // the cover starts going; it only stays down while nothing is dialled
+        prompt = lifecycleScope.launch {
+            var handedOver = false
+            try {
+                delay(settle) // the PIN screen sliding in
+                // The cover sits above every window, the sheet included: open only once it has gone.
+                withTimeoutOrNull(1_000) { RunCover.onScreen.first { !it } }
+                // Behind another app the sheet can't open, and androidx would never call back.
+                if (!ready() || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@launch
+                val cipher = OneTap.decrypter(this@MainActivity)
+                if (cipher == null) {
+                    OneTap.pinNotice.value = if (OneTap.saved.value) "The saved PIN couldn't be opened this time. Type your PIN."
+                    else "Your phone's fingerprints changed, so the saved PIN was removed. Type your PIN."
+                    return@launch
                 }
+                val amount = flow.amount?.toLongOrNull()?.let { "%,d TK".format(it) }
+                val title = when (flow.kind) {
+                    FlowKind.Payment -> amount?.let { "Pay $it?" } ?: "Pay?"
+                    FlowKind.SendMoney -> amount?.let { "Send $it?" } ?: "Send money?"
+                    FlowKind.CashOut -> amount?.let { "Cash out $it?" } ?: "Cash out?"
+                    FlowKind.Balance -> "Check your balance?"
+                }
+                handedOver = true
+                askFingerprint(
+                    title = title,
+                    subtitle = flow.recipient?.let { "To ${grouped(it, flow.groups ?: PhoneGroups)}" },
+                    cancel = "Use PIN",
+                    cipher = cipher,
+                    confirm = flow.kind != FlowKind.Balance,
+                ) { touch ->
+                    OneTap.prompting.value = false
+                    when (touch) {
+                        is Touch.Unlocked -> {
+                            val pin = OneTap.read(this@MainActivity, touch.cipher)
+                            if (pin == null) {
+                                OneTap.pinNotice.value = "The saved PIN couldn't be opened. Type your PIN."
+                            } else if (ready()) {
+                                OneTap.usedThisRun = true
+                                PinEntry.reset()
+                                // As the hold does: start walking the menu, and send the PIN once bKash's summary matches.
+                                UssdSession.warmUp()
+                                UssdSession.confirm(pin)
+                            }
+                        }
+                        Touch.Declined -> Unit
+                        is Touch.Failed -> OneTap.pinNotice.value = "${touch.message.trimEnd('.')}. Type your PIN."
+                    }
+                }
+            } finally {
+                if (!handedOver) OneTap.prompting.value = false
             }
         }
+    }
+
+    /** [number] spaced as the app shows it everywhere else (017 4560 6306), for the fingerprint sheet. */
+    private fun grouped(number: String, groups: List<Int>): String {
+        if (groups.sum() != number.length) return number
+        var at = 0
+        return groups.joinToString(" ") { n -> number.substring(at, at + n).also { at += n } }
     }
 
     private fun drive(flow: UssdFlow) {
@@ -531,7 +566,11 @@ class MainActivity : FragmentActivity() {
                 PinEntry.reset() // digits typed before a failure while walking the menu
                 // bKash refused the saved One Tap PIN: the result asks the user what to do with it.
                 val o = state.outcome
-                OneTap.wrongPin.value = OneTap.usedThisRun && o is Outcome.Failed && o.pinSent && OneTap.isWrongPin(o.message)
+                if (OneTap.usedThisRun) {
+                    val wrong = o is Outcome.Failed && o.pinSent && OneTap.isWrongPin(o.message)
+                    if (wrong) OneTap.suspect(this@MainActivity, true) else if (o is Outcome.Success) OneTap.suspect(this@MainActivity, false)
+                    OneTap.wrongPin.value = wrong
+                }
                 showResult(s.flow, state.outcome)
                 if (state.outcome is Outcome.Success && s.flow.kind == FlowKind.Payment) prefs.scanLearned = true
                 UssdSession.clear()
@@ -541,14 +580,19 @@ class MainActivity : FragmentActivity() {
         // One Tap: the fingerprint sheet opens by itself as the PIN screen comes up, once per run.
         LaunchedEffect(session?.flow, stack.lastOrNull()) {
             val s = session ?: return@LaunchedEffect
-            if (stack.lastOrNull() == Screen.Running && askedFor !== s.flow && OneTap.saved.value) {
-                askedFor = s.flow
-                payWithFingerprint(s.flow, settle = 350)
+            if (stack.lastOrNull() == Screen.Running && askedFor != runId && OneTap.saved.value) {
+                askedFor = runId
+                // bKash refused this PIN last time: no sheet by itself, another wrong PIN brings its lock closer.
+                if (OneTap.suspect(this@MainActivity)) {
+                    OneTap.pinNotice.value = "bKash refused your saved PIN last time. Type your PIN, or change it in ⋮ → One Tap."
+                } else {
+                    payWithFingerprint(s.flow, settle = 350)
+                }
             }
         }
         // "Use fingerprint" on the PIN screen, which may be the cover's copy: wait out the cover's fade.
         LaunchedEffect(Unit) {
-            OneTap.asks.collect { UssdSession.current.value?.let { payWithFingerprint(it.flow, settle = 260) } }
+            OneTap.asks.collect { UssdSession.current.value?.let { payWithFingerprint(it.flow, settle = 0) } }
         }
         BackHandler(enabled = stack.size > 1 && stack.last() != Screen.Running) { pop() }
         // On the PIN screen, back leaves it (closing a warm menu); once paying, back does nothing.
@@ -589,21 +633,24 @@ class MainActivity : FragmentActivity() {
               val update by Updates.state.collectAsState()
               val release = (update as? Updates.State.Available)?.release
               var sheetGone by remember { mutableStateOf(false) }
-              val updateUp = release != null && fake == null && !sheetGone && !Updates.snoozed(this)
+              var offering by remember { mutableStateOf(false) } // One Tap's offer, below; the update sheet waits for it
+              val updateUp = release != null && fake == null && !sheetGone && !offering && !Updates.snoozed(this)
               if (updateUp) UpdateSheet(release!!) { Updates.snooze(this); sheetGone = true }
-              // One Tap is offered once, on the second open, where it can work; never over the update sheet.
-              var offerGone by remember { mutableStateOf(false) }
-              val offer = !updateUp && fake == null && !offerGone && setupTick.let { offerOneTap() }
-              if (offer) {
-                  LaunchedEffect(Unit) { prefs.oneTapOffered = true } // shown is offered, even if the app is closed now
-                  OneTapOfferSheet(
-                      onSetUp = { offerGone = true; push(Screen.OneTap()) },
-                      onLater = {
-                          offerGone = true
-                          Toast.makeText(this, "One Tap is always in the ⋮ menu on Home.", Toast.LENGTH_LONG).show()
-                      },
-                  )
+              // One Tap is offered once, on the second open, where it can work. Decided once and held: the
+              // preference only says whether to open it, so a later recomposition can't take it away. Not
+              // while the update check runs, and not straight after the update sheet.
+              val canOffer = !updateUp && !sheetGone && fake == null && update !is Updates.State.Checking &&
+                  setupTick.let { offerOneTap() }
+              LaunchedEffect(canOffer) {
+                  if (canOffer && !offering) { offering = true; prefs.oneTapOffered = true }
               }
+              if (offering) OneTapOfferSheet(
+                  onSetUp = { offering = false; push(Screen.OneTap()) },
+                  onLater = {
+                      offering = false
+                      Toast.makeText(this, "One Tap is always in the ⋮ menu on Home.", Toast.LENGTH_LONG).show()
+                  },
+              )
               HomeScreen(
                 sims = fake?.sims ?: Dialer.sims(this),
                 simId = if (fake != null) fake.simId else setupTick.let { simId() }, // re-read after a SIM change
@@ -662,7 +709,16 @@ class MainActivity : FragmentActivity() {
             Screen.Running -> RunOverlay()
             is Screen.Result -> {
               val wrongPin by OneTap.wrongPin.collectAsState()
-              if (wrongPin) WrongPinSheet(
+              // Let the result land first: bKash's last dialog closes and the cover fades, then the sheet rises.
+              var settled by remember { mutableStateOf(false) }
+              LaunchedEffect(wrongPin) {
+                  if (!wrongPin) return@LaunchedEffect
+                  UssdDriver.dialogUp.first { !it }
+                  withTimeoutOrNull(1_000) { RunCover.onScreen.first { !it } }
+                  delay(200)
+                  settled = true
+              }
+              if (wrongPin && settled) WrongPinSheet(
                   onChange = { OneTap.wrongPin.value = false; home(); push(Screen.OneTap(change = true)) },
                   onRemove = { OneTap.wrongPin.value = false; OneTap.forget(this) },
                   onKeep = { OneTap.wrongPin.value = false },

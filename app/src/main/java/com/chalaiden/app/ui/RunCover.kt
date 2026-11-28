@@ -1,5 +1,8 @@
 package com.chalaiden.app.ui
 
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import android.content.Context
 import android.graphics.PixelFormat
 import android.graphics.Rect
@@ -69,6 +72,10 @@ object RunCover {
 
     /** Drives the fade; the window is added before it fades in and removed after it fades out. */
     private val shown = mutableStateOf(false)
+
+    /** The cover's window is on screen (fading counts). The fingerprint sheet waits for it to go. */
+    private val _onScreen = MutableStateFlow(false)
+    val onScreen: StateFlow<Boolean> = _onScreen.asStateFlow()
     private var removal: Job? = null
     private const val FADE_MILLIS = 220
 
@@ -80,9 +87,11 @@ object RunCover {
         val scope = MainScope()
         scope.launch {
             // Up for the session, and after it until the phone's last dialog has actually closed.
-            // Down while One Tap's fingerprint sheet is up: this layer sits above it and would hide it.
+            // Down while One Tap's fingerprint sheet is up: this layer sits above it and would hide it. Only
+            // before anything is dialled: once bKash's menu is up, the cover comes back whatever One Tap says.
             combine(UssdSession.current, UssdDriver.dialogUp, OneTap.prompting) { snap, dialogUp, prompting ->
-                ((snap != null && snap.state !is RunState.Finished) || dialogUp) && !prompting
+                val sheet = prompting && snap?.state == RunState.Ready && !dialogUp
+                ((snap != null && snap.state !is RunState.Finished) || dialogUp) && !sheet
             }
                 .distinctUntilChanged()
                 .collectLatest { running ->
@@ -168,7 +177,7 @@ object RunCover {
             }
         }
         runCatching { wm.addView(v, params) }
-            .onSuccess { view = v; owner = o; host = wm }
+            .onSuccess { view = v; owner = o; host = wm; _onScreen.value = true }
             .onFailure { o.stop() }
     }
 
@@ -182,6 +191,7 @@ object RunCover {
             view = null
             owner = null
             host = null
+            _onScreen.value = false
         }
     }
 
