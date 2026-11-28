@@ -81,6 +81,7 @@ import com.chalaiden.app.ui.components.Keypad
 import com.chalaiden.app.ui.components.capScale
 import com.chalaiden.app.ui.components.PrimaryButton
 import com.chalaiden.app.ui.components.HoldToConfirm
+import com.chalaiden.app.ui.components.TextAction
 import com.chalaiden.app.ui.components.TopBar
 import com.chalaiden.app.ui.theme.Type
 import com.chalaiden.app.ui.theme.tokens
@@ -261,6 +262,8 @@ fun AmountScreen(
     entry: MutableState<String>,
     onPay: (amount: String) -> Unit,
     onBack: () -> Unit,
+    /** Leaves the payment altogether (back goes one step, to the number). */
+    onCancel: () -> Unit,
     hold: Boolean = false,
 ) {
     val t = tokens
@@ -353,15 +356,17 @@ fun AmountScreen(
             HoldToConfirm(
                 if (value > 0) "Hold to ${verb.lowercase()} ${"%,d".format(value)} TK" else "Hold to ${verb.lowercase()}",
                 enabled = value > 0,
-                modifier = Modifier.padding(20.dp),
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp),
             ) { onPay(entry.value) }
         } else {
             PrimaryButton(
                 if (value > 0) "$verb ${"%,d".format(value)} TK" else verb,
                 enabled = value > 0,
-                modifier = Modifier.padding(20.dp),
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp),
             ) { onPay(entry.value) }
         }
+        // As on the PIN screen: under the button, where the thumb already is.
+        TextAction("Cancel", Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp, bottom = 12.dp), onClick = onCancel)
     }
 }
 

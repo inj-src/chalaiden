@@ -66,6 +66,7 @@ import com.chalaiden.app.ui.RunCover
 import com.chalaiden.app.ui.PinEntry
 import com.chalaiden.app.ui.AmountEntry
 import com.chalaiden.app.ui.StepReplay
+import com.chalaiden.app.ui.RunExit
 import com.chalaiden.app.ui.leavePin
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.chalaiden.app.ui.RunOverlay
@@ -566,6 +567,7 @@ class MainActivity : FragmentActivity() {
         PinEntry.reset()
         // A retry of a run whose amount was typed on the run screen keeps it, for Back from the PIN.
         AmountEntry.amount.value = flow.amount.orEmpty()
+        RunExit.toHome = false
         runId++
         askedFor = null
         prompt?.cancel()
@@ -711,7 +713,10 @@ class MainActivity : FragmentActivity() {
         val replayed by StepReplay.shown.collectAsState()
         LaunchedEffect(session, replayed) {
             // Left the PIN screen without paying: back to where the user came from.
-            val s = session ?: return@LaunchedEffect run { if (stack.lastOrNull() == Screen.Running) pop() }
+            val s = session ?: return@LaunchedEffect run {
+                if (stack.lastOrNull() == Screen.Running) if (RunExit.toHome) home() else pop()
+                RunExit.toHome = false
+            }
             val state = s.state
             // A payment that went through waits for the step list to finish ticking off (see StepReplay).
             if (state is RunState.Finished && stack.lastOrNull() == Screen.Running && StepReplay.caughtUp(s, replayed)) {
@@ -878,6 +883,7 @@ class MainActivity : FragmentActivity() {
                     )
                 },
                 onBack = ::pop,
+                onCancel = ::home,
               )
             }
             // The same screen the cover shows over the phone's dialogs; seen here if the cover can't be drawn.

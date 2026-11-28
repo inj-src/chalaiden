@@ -87,6 +87,11 @@ object PinEntry {
 }
 
 /** The amount typed on the run screen ([UssdFlow.amountLater]), shared the same way as [PinEntry]. */
+/** Cancel on the run's amount screen: the activity goes home once the run has ended, not back a step. */
+object RunExit {
+    @Volatile var toHome = false
+}
+
 object AmountEntry {
     val amount = mutableStateOf("")
     fun reset() { amount.value = "" }
@@ -142,6 +147,7 @@ fun RunOverlay() {
                 entry = AmountEntry.amount,
                 onPay = UssdSession::supplyAmount,
                 onBack = UssdSession::abandon,
+                onCancel = { RunExit.toHome = true; PinEntry.reset(); UssdSession.abandon() },
                 hold = s.pinHeld,
             )
         } else {
