@@ -542,12 +542,12 @@ fun TopBar(title: String, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val t = tokens
     Row(modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         BackButton(onBack)
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(4.dp))
         Text(title, style = Type.title, color = t.ink)
     }
 }
 
-/** Back, at the top left: a small 36dp disc, so it doesn't outweigh the title, on a full 48dp target. */
+/** Back, at the top left: the arrow alone, as on Android's own bars, on a full 48dp target that lights while pressed. */
 @Composable
 fun BackButton(onBack: () -> Unit, modifier: Modifier = Modifier) {
     val t = tokens
@@ -557,9 +557,7 @@ fun BackButton(onBack: () -> Unit, modifier: Modifier = Modifier) {
             .clickable(interactionSource = press, indication = LocalIndication.current, role = Role.Button, onClickLabel = "Back", onClick = onBack),
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.size(36.dp).clip(CircleShape).background(t.raised), contentAlignment = Alignment.Center) {
-            Icon(AppIcons.Back, contentDescription = "Back", tint = t.ink, modifier = Modifier.size(18.dp))
-        }
+        Icon(AppIcons.Back, contentDescription = "Back", tint = t.ink, modifier = Modifier.size(28.dp))
     }
 }
 
