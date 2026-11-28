@@ -1,5 +1,17 @@
 package com.chalaiden.app.ui
 
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalTextToolbar
+import android.widget.Toast
 import com.chalaiden.app.ui.components.BlinkingCaret
 import androidx.compose.runtime.key
 import androidx.compose.ui.platform.LocalDensity
@@ -118,8 +130,33 @@ fun NumberScreen(
                 Spacer(Modifier.height(24.dp))
             }
             Spacer(Modifier.height(8.dp))
-            // Grouped the way the card prints it, so the two read alike digit by digit.
-            NumberRail(number, groups = groups ?: PhoneGroups, cursor = number.length < 11)
+            // Grouped the way the card prints it, so the two read alike digit by digit. Long-press opens the
+            // phone's own text menu with Paste, as a text field does; TalkBack gets Paste as an action.
+            val toolbar = LocalTextToolbar.current
+            val haptics = LocalHapticFeedback.current
+            var railBounds by remember { mutableStateOf(Rect.Zero) }
+            fun paste() {
+                toolbar.hide()
+                pasted(context)?.let { number = it }
+                    ?: Toast.makeText(context, "No phone number in what you copied.", Toast.LENGTH_SHORT).show()
+            }
+            NumberRail(
+                number, groups = groups ?: PhoneGroups, cursor = number.length < 11,
+                modifier = Modifier
+                    .onGloballyPositioned { railBounds = it.boundsInRoot() }
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = { toolbar.hide() },
+                            onLongPress = {
+                                if (context.getSystemService(ClipboardManager::class.java).hasPrimaryClip()) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    toolbar.showMenu(railBounds, onCopyRequested = null, onPasteRequested = ::paste, onCutRequested = null, onSelectAllRequested = null)
+                                }
+                            },
+                        )
+                    }
+                    .semantics { customActions = listOf(CustomAccessibilityAction("Paste") { paste(); true }) },
+            )
             Spacer(Modifier.height(10.dp))
             Text(
                 when {
@@ -136,8 +173,7 @@ fun NumberScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    if (kind == FlowKind.SendMoney) Chip(AppIcons.Person, "Contacts") { contact.launch(Unit) }
-                    Chip(AppIcons.Paste, "Paste") { pasted(context)?.let { number = it } }
+                    Chip(AppIcons.Person, "Contacts") { contact.launch(Unit) }
                     if (onScan != null) Chip(AppIcons.Scan, "Scan") { onScan() }
                 }
             }
