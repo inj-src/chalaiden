@@ -50,6 +50,11 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.1")
     implementation("androidx.savedstate:savedstate-ktx:1.3.0")
 
+    // One Tap: the PIN is kept encrypted with a key that only a fingerprint unlocks. BiometricPrompt needs
+    // a FragmentActivity; the explicit fragment keeps it in step with activity-compose.
+    implementation("androidx.biometric:biometric:1.1.0")
+    implementation("androidx.fragment:fragment-ktx:1.8.6")
+
     val camerax = "1.4.2"
     implementation("androidx.camera:camera-core:$camerax")
     implementation("androidx.camera:camera-camera2:$camerax")
