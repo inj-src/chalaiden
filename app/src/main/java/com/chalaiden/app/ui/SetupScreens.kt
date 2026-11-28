@@ -12,6 +12,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -29,6 +30,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -61,7 +63,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -90,8 +91,9 @@ private const val WAY = 2
 private const val STEPS = 3
 
 /**
- * Setup as three pages, one thing each: phone access, the bKash SIM, and how bKash gets answered
- * (guided mode, Accessibility, Shizuku or root; any one is enough). It opens on the first unfinished step, or on the
+ * Setup as three pages, one thing each: phone access, the bKash SIM, and how bKash gets answered. That
+ * last page offers one way, the Accessibility method, shown as "Automatic": it has worked best on every
+ * phone tried. Guided mode, Shizuku and root sit behind "Advanced options". It opens on the first unfinished step, or on the
  * last when everything is done, since that is the one people come back to change.
  */
 @Composable
@@ -145,31 +147,44 @@ fun SetupScreen(
     LaunchedEffect(phoneOk) { if (phoneOk && !hadPhone && pager.currentPage == PHONE) pager.animateScrollToPage(SIM) }
     BackHandler(enabled = pager.currentPage > 0) { go(pager.currentPage - 1) }
 
-    var choice by rememberSaveable {
-        mutableStateOf(inUse ?: prefs.method ?: if (rootOk) Method.Root else if (shizukuOk) Method.Shizuku else null)
-    }
-    LaunchedEffect(inUse) { if (choice == null && inUse != null) choice = inUse }
+    // What's picked among the advanced ways; the first page is always the Automatic (Accessibility) way.
+    var choice by rememberSaveable { mutableStateOf((inUse ?: prefs.method)?.takeIf { it != Method.Accessibility }) }
+    LaunchedEffect(inUse) { if (choice == null && inUse != Method.Accessibility) choice = inUse }
+    // Someone already on another way comes back to the list it's in.
+    var advanced by rememberSaveable { mutableStateOf(choice != null) }
+    BackHandler(enabled = advanced && pager.currentPage == WAY) { advanced = false }
 
-    // A step only counts as done once the ones before it are.
-    val done = listOf(phoneOk, phoneOk && simId != null, phoneOk && simId != null && inUse != null)
     Column(Modifier.fillMaxSize().background(t.bg).systemBarsPadding()) {
-        SetupHeader(pager.currentPage, done, onBack = { if (pager.currentPage > 0) go(pager.currentPage - 1) else onBack() })
+        SetupHeader(onBack = {
+            when {
+                advanced && pager.currentPage == WAY -> advanced = false
+                pager.currentPage > 0 -> go(pager.currentPage - 1)
+                else -> onBack()
+            }
+        })
         HorizontalPager(pager, Modifier.weight(1f), userScrollEnabled = false, verticalAlignment = Alignment.Top) { page ->
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
                 when (page) {
                     PHONE -> PhoneStep(phoneOk)
                     SIM -> SimStep(phoneOk, sims, simId) { simId = it; prefs.simSubscriptionId = it }
-                    else -> WayStep(
-                        choice = choice,
-                        onPick = { choice = it },
-                        inUse = inUse,
-                        rootOk = rootOk,
-                        shizukuOk = shizukuOk,
-                        a11yOk = a11yOk,
-                        shizuku = shizuku,
-                        keyboardOn = keyboardOn,
-                        canFloat = canFloat,
-                    )
+                    else -> Crossfade(advanced, label = "way") { more ->
+                        Column {
+                            if (more) {
+                                WayStep(
+                                    choice = choice,
+                                    onPick = { choice = it },
+                                    inUse = inUse,
+                                    rootOk = rootOk,
+                                    shizukuOk = shizukuOk,
+                                    shizuku = shizuku,
+                                    keyboardOn = keyboardOn,
+                                    canFloat = canFloat,
+                                )
+                            } else {
+                                AutomaticStep(a11yOk, inUse, onHelp = { onGuide(Method.Accessibility) })
+                            }
+                        }
+                    }
                 }
                 Spacer(Modifier.height(24.dp))
             }
@@ -179,6 +194,7 @@ fun SetupScreen(
         // button doesn't jump from page to page.
         var primary: Pair<String, () -> Unit>? = null
         var secondary: Pair<String, () -> Unit>? = null
+        var quiet = false // the secondary line in grey: "Advanced options" is there, not pushed
         val finish = {
             when {
                 !phoneOk -> go(PHONE)
@@ -198,7 +214,7 @@ fun SetupScreen(
                 else -> "Allow phone access" to { ask.launch(Dialer.permissions) }
             }
             SIM -> primary = "Continue" to { go(WAY) }
-            else -> when (choice) {
+            else -> when (if (advanced) choice else Method.Accessibility) {
                 Method.Shizuku -> {
                     primary = when {
                         inUse == Method.Shizuku -> "Finish" to finish
@@ -219,14 +235,15 @@ fun SetupScreen(
                 Method.Accessibility -> {
                     primary = when {
                         inUse == Method.Accessibility -> "Finish" to finish
-                        a11yOk -> "Use Accessibility" to { onChoose(Method.Accessibility) }
+                        a11yOk -> "Use this" to { onChoose(Method.Accessibility) }
                         // Chosen now, so it's in use as soon as the switch is on.
                         else -> "Turn on in Settings" to {
                             onChoose(Method.Accessibility)
                             ChalaidenAccessibility.openSettings(context)
                         }
                     }
-                    secondary = "Show me how" to { onGuide(Method.Accessibility) }
+                    secondary = "Advanced options" to { advanced = true }
+                    quiet = true
                 }
                 Method.Root -> {
                     primary = when {
@@ -269,15 +286,15 @@ fun SetupScreen(
                 PrimaryButton("Pick one", enabled = false) {}
             }
             Box(Modifier.height(52.dp), contentAlignment = Alignment.Center) {
-                secondary?.let { (label, action) -> TextAction(label, onClick = action) }
+                secondary?.let { (label, action) -> TextAction(label, color = if (quiet) t.inkSoft else t.ink, onClick = action) }
             }
         }
     }
 }
 
-/** Back, then one bar per step: white for the one in front, blue once a step is done. */
+/** Back, on its own: the pages say what they're for, so there's no step count. */
 @Composable
-private fun SetupHeader(page: Int, done: List<Boolean>, onBack: () -> Unit) {
+private fun SetupHeader(onBack: () -> Unit) {
     val t = tokens
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(
@@ -286,25 +303,6 @@ private fun SetupHeader(page: Int, done: List<Boolean>, onBack: () -> Unit) {
         ) {
             Icon(AppIcons.Back, contentDescription = "Back", tint = t.ink, modifier = Modifier.size(22.dp))
         }
-        Spacer(Modifier.width(18.dp))
-        // The segments say where you are; the words are for screen readers only.
-        Row(
-            Modifier.weight(1f).semantics(mergeDescendants = true) { contentDescription = "Step ${page + 1} of $STEPS" },
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            repeat(STEPS) { k ->
-                val color by animateColorAsState(
-                    when {
-                        // Where you are and what's behind you in ink; what's ahead in grey. Blue is kept for money.
-                        k == page || done[k] -> t.ink
-                        else -> t.raised
-                    },
-                    label = "step-bar",
-                )
-                Box(Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(50)).background(color))
-            }
-        }
-        Spacer(Modifier.width(16.dp))
     }
 }
 
@@ -371,6 +369,37 @@ private fun SimTile(sim: Sim, selected: Boolean, modifier: Modifier = Modifier, 
     }
 }
 
+/**
+ * The way most people should use: the Accessibility method, named for what it does. A line under it
+ * says it goes through Android's Accessibility setting, since that's the switch they'll be sent to.
+ */
+@Composable
+private fun AutomaticStep(a11yOk: Boolean, inUse: Method?, onHelp: () -> Unit) {
+    val t = tokens
+    StepHeading(
+        "Let Chalaiden answer bKash for you",
+        "Chalaiden goes through bKash's menu behind its own screen. You only type your PIN.",
+    )
+    if (a11yOk) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Tick(18)
+            Spacer(Modifier.width(8.dp))
+            Text(if (inUse == Method.Accessibility) "It's on" else "It's on. Tap Use this to switch to it.", style = Type.label, color = t.ink)
+        }
+    } else {
+        Text(
+            "Turn on Chalaiden once in your phone's Accessibility settings. It only reads the phone's bKash menu.",
+            style = Type.label.copy(lineHeight = 20.sp), color = t.inkSoft,
+        )
+        Text(
+            "Switch greyed out? Show me how",
+            style = Type.label, color = t.ink,
+            modifier = Modifier.padding(top = 4.dp).heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onHelp)
+                .padding(vertical = 14.dp),
+        )
+    }
+}
+
 @Composable
 private fun WayStep(
     choice: Method?,
@@ -378,12 +407,11 @@ private fun WayStep(
     inUse: Method?,
     rootOk: Boolean,
     shizukuOk: Boolean,
-    a11yOk: Boolean,
     shizuku: ShizukuAccess.Status,
     keyboardOn: Boolean,
     canFloat: Boolean,
 ) {
-    StepHeading("How should Chalaiden answer bKash?", "Any one of these is enough. You can switch later.")
+    StepHeading("Advanced options", "Other ways to answer bKash, for phones where Automatic doesn't work. Any one is enough.")
     Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         WayRow(
             icon = { GuidedBadge() },
@@ -399,18 +427,6 @@ private fun WayStep(
             },
             selected = choice == Method.Guided,
         ) { onPick(Method.Guided) }
-        WayRow(
-            icon = { AccessibilityBadge() },
-            title = "Accessibility",
-            tag = "No root or Shizuku",
-            detail = if (a11yOk) {
-                "Chalaiden's accessibility service is on. It answers bKash for you, behind its own screen."
-            } else {
-                "Switch on Chalaiden in Settings › Accessibility, and it answers bKash for you. It only reads " +
-                    "the phone's USSD menu. Switch greyed out? Tap Show me how."
-            },
-            selected = choice == Method.Accessibility,
-        ) { onPick(Method.Accessibility) }
         WayRow(
             icon = { AppTile(R.drawable.shizuku_icon, 40) },
             title = "Shizuku",
@@ -524,14 +540,6 @@ private fun shizukuAction(status: ShizukuAccess.Status) = when (status) {
     ShizukuAccess.Status.NeedsPermission -> "Allow in Shizuku"
     ShizukuAccess.Status.Denied -> "Open Shizuku"
     ShizukuAccess.Status.Ready -> "Try again"
-}
-
-/** The Accessibility method's mark: Android's own accessibility figure on a tile. */
-@Composable
-private fun AccessibilityBadge() {
-    Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(tokens.raised), contentAlignment = Alignment.Center) {
-        Icon(AppIcons.Accessibility, null, tint = tokens.ink, modifier = Modifier.size(24.dp))
-    }
 }
 
 /**
