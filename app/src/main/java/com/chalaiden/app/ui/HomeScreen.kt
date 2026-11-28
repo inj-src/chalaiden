@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -527,10 +528,12 @@ private fun HomeMenu(
     @Composable
     fun Item(label: String, icon: ImageVector, onClick: () -> Unit, trailing: (@Composable () -> Unit)? = null) = DropdownMenuItem(
         text = { Text(label, style = Type.body, color = t.ink) },
-        leadingIcon = { Icon(icon, contentDescription = null, tint = t.inkSoft, modifier = Modifier.size(20.dp)) },
+        // In the text's colour and close to its size: grey icons read as switched off.
+        leadingIcon = { Icon(icon, contentDescription = null, tint = t.ink, modifier = Modifier.size(22.dp)) },
         trailingIcon = trailing,
         onClick = { open = false; onClick() },
         modifier = Modifier.widthIn(min = 220.dp).heightIn(min = 48.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp),
     )
     Box(modifier) {
         Box(
@@ -558,7 +561,7 @@ private fun HomeMenu(
                     { Box(Modifier.size(8.dp).clip(CircleShape).background(t.accent)) }
                 } else null,
             )
-            Item("Setup", AppIcons.Sliders, onSetup)
+            Item("Setup", AppIcons.Switches, onSetup)
             Item("About", AppIcons.Info, onAbout)
         }
     }

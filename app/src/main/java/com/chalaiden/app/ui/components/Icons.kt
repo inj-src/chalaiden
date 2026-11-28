@@ -139,8 +139,8 @@ object AppIcons {
         "M15.6 6.4l-7.2 4.2",
     )
 
-    /** Three sliders: Setup, where the way Chalaiden answers bKash is set. Paths from Lucide (ISC licence). */
-    val Sliders = svg("sliders", "M21 4h-7", "M10 4H3", "M21 12h-9", "M8 12H3", "M21 20h-5", "M12 20H3", "M14 2v4", "M8 10v4", "M16 18v4")
+    /** Two switches: Setup, where the way Chalaiden answers bKash is set. Paths from Lucide (ISC licence). */
+    val Switches = svg("switches", "M20 7h-9", "M14 17H5", "M17 14a3 3 0 1 1 0 6a3 3 0 1 1 0-6z", "M7 4a3 3 0 1 1 0 6a3 3 0 1 1 0-6z")
 
     /** An arrow into a tray: Updates. Paths from Lucide (ISC licence). */
     val Download = svg("download", "M12 15V3.5", "M20.5 15v4a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2v-4", "M7 10l5 5l5-5")
