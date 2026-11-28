@@ -17,6 +17,8 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # The signing key lives in this environment's secrets, which only main can deploy to.
+    environment: release
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,15 +35,16 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      # Phones that installed a shared APK only take an update signed with the same key, so the build
-      # is signed with that key, kept as a secret. Without it the APK couldn't update anyone.
+      # A phone only takes an update signed with the key its copy was signed with, so every release is
+      # signed with Chalaiden's release key. Losing it means everyone reinstalls; it is backed up offline.
       - name: Restore the signing key
         env:
           KEYSTORE: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+          PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: |
-          test -n "$KEYSTORE" || { echo "::error::The SIGNING_KEYSTORE_B64 secret is missing."; exit 1; }
-          mkdir -p ~/.android
-          echo "$KEYSTORE" | base64 -d > ~/.android/debug.keystore
+          test -n "$KEYSTORE" && test -n "$PASSWORD" || { echo "::error::The release environment's signing secrets are missing."; exit 1; }
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.p12"
+          echo "SIGNING_KEYSTORE=$RUNNER_TEMP/release.p12" >> "$GITHUB_ENV"
 
       - uses: actions/setup-java@v4
         with:
@@ -51,7 +54,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Build
-        run: ./gradlew --no-daemon :app:assembleDebug
+        env:
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: ./gradlew --no-daemon :app:assembleRelease
 
       - name: Publish
         env:
@@ -59,7 +64,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           apk="chalaiden-$VERSION.apk"
-          cp app/build/outputs/apk/debug/app-debug.apk "$apk"
+          cp app/build/outputs/apk/release/app-release.apk "$apk"
           last=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
           # The newest 30 at most: the first release would otherwise list the project's whole history.
           git log --no-merges --format='- %s' ${last:+$last..}HEAD | head -n 30 > notes.md

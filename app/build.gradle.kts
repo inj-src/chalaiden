@@ -20,8 +20,23 @@ android {
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
+    // Releases are signed with Chalaiden's own key. CI restores it from the "release" environment's
+    // secrets (see .github/workflows/release.yml); a local release build without it is signed with the
+    // debug key instead, so it still installs over a debug build for testing.
+    signingConfigs {
+        val store = System.getenv("SIGNING_KEYSTORE")?.takeIf { it.isNotBlank() }
+        if (store != null) create("release") {
+            storeFile = file(store)
+            storeType = "PKCS12"
+            storePassword = System.getenv("SIGNING_PASSWORD")
+            keyAlias = "chalaiden"
+            keyPassword = System.getenv("SIGNING_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
