@@ -129,6 +129,25 @@ object AppIcons {
         "M12 9.5v4.5l-3 6.5M12 14l3 6.5",
     )
 
+    /** Three linked dots: share Chalaiden with another phone. Paths from Lucide (ISC licence). */
+    val Share = svg(
+        "share",
+        "M18 2.5a2.75 2.75 0 1 1 0 5.5a2.75 2.75 0 1 1 0-5.5z",
+        "M6 9.25a2.75 2.75 0 1 1 0 5.5a2.75 2.75 0 1 1 0-5.5z",
+        "M18 16a2.75 2.75 0 1 1 0 5.5a2.75 2.75 0 1 1 0-5.5z",
+        "M8.4 13.4l7.2 4.2",
+        "M15.6 6.4l-7.2 4.2",
+    )
+
+    /** Three sliders: Setup, where the way Chalaiden answers bKash is set. Paths from Lucide (ISC licence). */
+    val Sliders = svg("sliders", "M21 4h-7", "M10 4H3", "M21 12h-9", "M8 12H3", "M21 20h-5", "M12 20H3", "M14 2v4", "M8 10v4", "M16 18v4")
+
+    /** An arrow into a tray: Updates. Paths from Lucide (ISC licence). */
+    val Download = svg("download", "M12 15V3.5", "M20.5 15v4a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2v-4", "M7 10l5 5l5-5")
+
+    /** An "i" in a circle: About. */
+    val Info = svg("info", "M12 3.5a8.5 8.5 0 1 1 0 17a8.5 8.5 0 1 1 0-17z", "M12 16v-4.5", "M12 8h.01")
+
     /** Three dots, for a menu. Filled: thin strokes read as rings at this size. */
     val More = ImageVector.Builder("more", 24.dp, 24.dp, 24f, 24f).apply {
         listOf(5f, 12f, 19f).forEach { y ->

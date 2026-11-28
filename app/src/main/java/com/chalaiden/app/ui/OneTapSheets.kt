@@ -72,7 +72,7 @@ fun WrongPinSheet(onChange: () -> Unit, onRemove: () -> Unit, onKeep: () -> Unit
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ChoiceSheet(
+internal fun ChoiceSheet(
     art: (@Composable (Color) -> Unit)?,
     title: String,
     body: String,

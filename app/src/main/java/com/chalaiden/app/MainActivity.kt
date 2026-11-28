@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import androidx.lifecycle.Lifecycle
 import android.widget.Toast
+import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
@@ -71,6 +72,8 @@ import com.chalaiden.app.ui.MethodGuideScreen
 import com.chalaiden.app.ui.AboutScreen
 import com.chalaiden.app.ui.UpdateSheet
 import com.chalaiden.app.ui.OneTapOfferSheet
+import com.chalaiden.app.ui.ShareSheet
+import com.chalaiden.app.share.ShareApp
 import com.chalaiden.app.ui.WrongPinSheet
 import com.chalaiden.app.ui.UpdatesScreen
 import com.chalaiden.app.update.Updates
@@ -104,7 +107,8 @@ private sealed interface Screen {
     data class Amount(val kind: FlowKind, val number: String, val groups: List<Int>? = null) : Screen
     data object Running : Screen
     data class Result(val flow: UssdFlow, val outcome: Outcome, val wave: Boolean = false) : Screen
-    data class Setup(val then: UssdFlow?) : Screen
+    /** [fromStart]: opened from the menu, so the steps run again from the first rather than jumping to what's missing. */
+    data class Setup(val then: UssdFlow?, val fromStart: Boolean = false) : Screen
     /** Step-by-step set-up for one way of answering bKash, opened from Setup. */
     data class MethodGuide(val method: Method) : Screen
     data object About : Screen
@@ -568,6 +572,23 @@ class MainActivity : FragmentActivity() {
         return groups.joinToString(" ") { n -> number.substring(at, at + n).also { at += n } }
     }
 
+    /**
+     * Share Chalaiden: copies the installed app where Quick Share can read it, then hands it over ([target]), or
+     * to Android's share sheet. The copy takes a moment for 20 MB, so it runs off the main thread.
+     */
+    private fun share(target: ComponentName?) {
+        lifecycleScope.launch {
+            val file = ShareApp.copy(this@MainActivity)
+            if (isDestroyed || isFinishing) return@launch
+            if (file == null) {
+                Toast.makeText(this@MainActivity, "Couldn't get the app ready to share. Try again.", Toast.LENGTH_LONG).show()
+            } else {
+                runCatching { ShareApp.send(this@MainActivity, file, target) }
+                    .onFailure { Toast.makeText(this@MainActivity, "No app here can send it.", Toast.LENGTH_LONG).show() }
+            }
+        }
+    }
+
     private fun drive(flow: UssdFlow) {
         // Driver sweeps leftover dialogs and drives the menu; the activity dials, because the
         // USSD dialog only launches from a foreground app (OxygenOS blocks it otherwise).
@@ -675,6 +696,14 @@ class MainActivity : FragmentActivity() {
               LaunchedEffect(canOffer) {
                   if (canOffer && !offering) { offering = true; offered = true; prefs.oneTapOffered = true }
               }
+              // Share Chalaiden, from the menu: a line on what to do in Quick Share, then the app goes to it.
+              var sharing by remember { mutableStateOf(false) }
+              val quickShare = remember { ShareApp.quickShare(this) }
+              if (sharing && stack.lastOrNull() == Screen.Home) ShareSheet(
+                  quickShare = quickShare != null,
+                  onShare = { sharing = false; share(quickShare) },
+                  onCancel = { sharing = false },
+              )
               if (offering && stack.lastOrNull() == Screen.Home) OneTapOfferSheet(
                   onSetUp = { offering = false; push(Screen.OneTap()) },
                   onLater = {
@@ -694,7 +723,9 @@ class MainActivity : FragmentActivity() {
                 onCashOut = { push(Screen.Number(FlowKind.CashOut, "", null)) },
                 onBalance = { start(Flows.balance()) },
                 onSetup = { push(Screen.Setup(then = null)) },
+                onRedoSetup = { push(Screen.Setup(then = null, fromStart = true)) },
                 onOneTap = { push(Screen.OneTap()) },
+                onShare = { sharing = true },
                 onAbout = { push(Screen.About) },
                 onUpdates = { push(Screen.Updates) },
                 updateAvailable = release != null,
@@ -768,6 +799,7 @@ class MainActivity : FragmentActivity() {
             }
             is Screen.Setup -> SetupScreen(
                 prefs = prefs,
+                fromStart = screen.fromStart,
                 rootOk = rootOk,
                 shizukuOk = shizukuOk,
                 a11yOk = a11yOk,

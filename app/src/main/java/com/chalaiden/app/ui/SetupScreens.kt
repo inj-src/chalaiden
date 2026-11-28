@@ -108,6 +108,8 @@ private const val STEPS = 3
 @Composable
 fun SetupScreen(
     prefs: Prefs,
+    /** Opened from the menu: the steps from the first, even when they're all done. */
+    fromStart: Boolean = false,
     rootOk: Boolean,
     shizukuOk: Boolean,
     /** Chalaiden's accessibility service is on (the Accessibility method). */
@@ -145,7 +147,7 @@ fun SetupScreen(
     } == true
 
     val pager = rememberPagerState(initialPage = when {
-        !phoneOk -> PHONE
+        fromStart || !phoneOk -> PHONE
         simId == null -> SIM
         else -> WAY
     }) { STEPS }

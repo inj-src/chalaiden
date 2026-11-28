@@ -91,6 +91,7 @@ import com.chalaiden.app.ui.components.capScale
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.heightIn
@@ -116,8 +117,12 @@ fun HomeScreen(
     onSend: () -> Unit,
     onCashOut: () -> Unit,
     onBalance: () -> Unit,
+    /** The "Finish setup" callout: straight to the step that's missing. */
     onSetup: () -> Unit,
+    /** Setup in the menu: the steps again from the first. */
+    onRedoSetup: () -> Unit = onSetup,
     onOneTap: () -> Unit = {},
+    onShare: () -> Unit = {},
     onAbout: () -> Unit = {},
     onUpdates: () -> Unit = {},
     /** A newer version is on GitHub: Updates in the menu gets a dot. */
@@ -148,7 +153,7 @@ fun HomeScreen(
                         modifier = Modifier.padding(start = 6.dp).height(28.dp).aspectRatio(42f / 36f).semantics { heading() },
                     )
                     Spacer(Modifier.weight(1f))
-                    HomeMenu(onSetup, onOneTap, onAbout, onUpdates, updateAvailable, Modifier.offset(x = 12.dp))
+                    HomeMenu(onRedoSetup, onOneTap, onShare, onAbout, onUpdates, updateAvailable, Modifier.offset(x = 12.dp))
                 }
                 // The brand comes in more than one design; a swipe left or right changes it. Edge to edge, so a
                 // design slides off the screen rather than into the margin.
@@ -503,11 +508,30 @@ private fun carrierOf(sim: Sim): String? = sim.carrier.takeIf { it.isNotBlank() 
 
 private fun simName(sim: Sim) = listOfNotNull("SIM ${sim.slot + 1}", carrierOf(sim)).joinToString(", ")
 
-/** The ⋮ button in Home's top-right corner and its menu: Setup (always one tap away from here), Updates and About. */
+/**
+ * The ⋮ button in Home's top-right corner and its menu, the most used first: One Tap (which the offer and the
+ * PIN step point to), Share, Updates, then Setup and About, which most people open once.
+ */
 @Composable
-private fun HomeMenu(onSetup: () -> Unit, onOneTap: () -> Unit, onAbout: () -> Unit, onUpdates: () -> Unit, updateAvailable: Boolean, modifier: Modifier = Modifier) {
+private fun HomeMenu(
+    onSetup: () -> Unit,
+    onOneTap: () -> Unit,
+    onShare: () -> Unit,
+    onAbout: () -> Unit,
+    onUpdates: () -> Unit,
+    updateAvailable: Boolean,
+    modifier: Modifier = Modifier,
+) {
     val t = tokens
     var open by remember { mutableStateOf(false) }
+    @Composable
+    fun Item(label: String, icon: ImageVector, onClick: () -> Unit, trailing: (@Composable () -> Unit)? = null) = DropdownMenuItem(
+        text = { Text(label, style = Type.body, color = t.ink) },
+        leadingIcon = { Icon(icon, contentDescription = null, tint = t.inkSoft, modifier = Modifier.size(20.dp)) },
+        trailingIcon = trailing,
+        onClick = { open = false; onClick() },
+        modifier = Modifier.widthIn(min = 220.dp).heightIn(min = 48.dp),
+    )
     Box(modifier) {
         Box(
             Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Menu") { open = true },
@@ -524,29 +548,18 @@ private fun HomeMenu(onSetup: () -> Unit, onOneTap: () -> Unit, onAbout: () -> U
             border = if (t.isDark) BorderStroke(1.dp, t.line) else null,
             offset = DpOffset((-8).dp, 0.dp),
         ) {
-            DropdownMenuItem(
-                text = { Text("Change method", style = Type.body, color = t.ink) },
-                onClick = { open = false; onSetup() },
-                modifier = Modifier.widthIn(min = 220.dp).heightIn(min = 48.dp),
-            )
-            DropdownMenuItem(
-                text = { Text("One Tap", style = Type.body, color = t.ink) },
-                onClick = { open = false; onOneTap() },
-                modifier = Modifier.widthIn(min = 220.dp).heightIn(min = 48.dp),
-            )
-            DropdownMenuItem(
-                text = { Text("Updates", style = Type.body, color = t.ink) },
-                trailingIcon = if (updateAvailable) {
+            Item("One Tap", AppIcons.Fingerprint, onOneTap)
+            Item("Share Chalaiden", AppIcons.Share, onShare)
+            Item(
+                "Updates",
+                AppIcons.Download,
+                onUpdates,
+                trailing = if (updateAvailable) {
                     { Box(Modifier.size(8.dp).clip(CircleShape).background(t.accent)) }
                 } else null,
-                onClick = { open = false; onUpdates() },
-                modifier = Modifier.widthIn(min = 220.dp).heightIn(min = 48.dp),
             )
-            DropdownMenuItem(
-                text = { Text("About", style = Type.body, color = t.ink) },
-                onClick = { open = false; onAbout() },
-                modifier = Modifier.widthIn(min = 220.dp).heightIn(min = 48.dp),
-            )
+            Item("Setup", AppIcons.Sliders, onSetup)
+            Item("About", AppIcons.Info, onAbout)
         }
     }
 }

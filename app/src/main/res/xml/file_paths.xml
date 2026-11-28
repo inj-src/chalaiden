@@ -1,3 +1,5 @@
 <paths>
     <cache-path name="receipts" path="receipts/" />
+    <!-- A copy of the installed app, handed to Quick Share (Share Chalaiden). -->
+    <cache-path name="share" path="share/" />
 </paths>
