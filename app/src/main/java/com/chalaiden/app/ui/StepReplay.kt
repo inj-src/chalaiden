@@ -26,7 +26,7 @@ import kotlinx.coroutines.launch
  * One copy for both screens: the activity and [RunCover] each draw [RunOverlay].
  */
 object StepReplay {
-    const val STEP_MILLIS = 200L
+    const val STEP_MILLIS = 400L
 
     private val _shown = MutableStateFlow<Int?>(null)
 
