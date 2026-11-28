@@ -387,13 +387,51 @@ class UssdEngineTest {
         UssdSession.clear()
     }
 
-    /** Back on the amount step goes to bKash's dialog, which has the focus: it closes, and so does the run. */
-    @Test fun dialogClosedOnTheAmountStepLeavesTheRun() {
+    /** bKash's dialog went without a word while the amount was typed: nothing was sent, so stay and redial later. */
+    @Test fun dialogClosedOnTheAmountStepQuietlyRearms() {
         earlyToAmount()
         UssdSession.onDialogGone()
-        assertEquals(null, UssdSession.current.value)
+        val snap = UssdSession.current.value!!
+        assertEquals(RunState.Ready, snap.state)
+        assertTrue(snap.flow.needsAmount)
         assertTrue(!UssdSession.isActive)
         UssdSession.clear()
+    }
+
+    /** Back from the PIN to change the amount: the old figure must not let the PIN through on the redial. */
+    @Test fun editedAmountIsTheOneTheSummaryMustMatch() {
+        earlyToAmount()
+        UssdSession.supplyAmount("10")
+        UssdSession.editAmount()
+        UssdSession.supplyAmount("20")
+        UssdSession.begin(UssdSession.current.value!!.flow)
+        UssdSession.confirm("12345")
+        listOf(menu, "Enter Merchant bKash Account No:", "Enter Amount:", "Enter Reference:").forEach { UssdSession.onDialog(prompt(it)) }
+        assertEquals(Action.Cancel, UssdSession.onDialog(prompt(paymentConfirm)))
+        UssdSession.clear()
+    }
+
+    @Test fun cashOutWalksWhileTheAmountIsTyped() {
+        val e = UssdEngine(Flows.cashOut("01783007004", null))
+        assertEquals(Action.Reply("5"), e.onDialog(prompt(menu)))
+        e.onDialog(prompt("bKash\n1 From Agent\n2 From ATM\n3 Priyo Agent Numbers\n# NEXT"))
+        assertEquals(Action.Reply("01783007004"), e.onDialog(prompt("Enter Agent bKash Account No:")))
+        assertEquals(Action.None, e.onDialog(prompt("Enter Amount:")))
+        assertTrue(e.state is RunState.AwaitingAmount)
+        assertEquals(Action.Reply("50", to = "Enter Amount:"), e.supplyAmount("50"))
+        e.presetPin("12345")
+        val confirm = "Cash Out\nTo: 01783007004\nAmount: Tk 50\nEnter Menu PIN to confirm:"
+        assertEquals("12345", (e.onDialog(prompt(confirm)) as Action.Reply).text)
+    }
+
+    /** Back on the amount screen while the driver was still setting up: the driver must not dial after it. */
+    @Test fun leavingBeforeTheDialEndsTheSession() {
+        val flow = Flows.sendMoney("01302277488", null, "")
+        UssdSession.prepare(flow)
+        UssdSession.begin(flow)
+        UssdSession.abandon()
+        assertTrue(!UssdSession.isActive)
+        assertEquals(null, UssdSession.current.value)
     }
 
     @Test fun backFromPinReturnsToTheAmount() {

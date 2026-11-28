@@ -86,8 +86,8 @@ object PinEntry {
 
 /** The amount typed on the run screen ([UssdFlow.amountLater]), shared the same way as [PinEntry]. */
 object AmountEntry {
-    var amount by mutableStateOf("")
-    fun reset() { amount = "" }
+    val amount = mutableStateOf("")
+    fun reset() { amount.value = "" }
 }
 
 /**
@@ -131,8 +131,7 @@ fun RunOverlay() {
                 kind = s.flow.kind,
                 number = recipient,
                 groups = s.flow.groups,
-                amount = AmountEntry.amount,
-                onAmount = { AmountEntry.amount = it },
+                entry = AmountEntry.amount,
                 onPay = UssdSession::supplyAmount,
                 onBack = UssdSession::abandon,
             )
@@ -261,6 +260,8 @@ private fun PinStep(flow: UssdFlow) {
             Keypad(
                 // The notice stays while typing: clearing it would resize the keys on the first press.
                 onKey = {
+                    // Still on its way out after Back to the amount: this keypad no longer types the PIN.
+                    if (UssdSession.current.value?.flow?.needsAmount != false) return@Keypad
                     if (PinEntry.pin.length < PIN_LENGTH) PinEntry.pin += it
                     UssdSession.warmUp()
                 },

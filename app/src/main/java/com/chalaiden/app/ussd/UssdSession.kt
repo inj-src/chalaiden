@@ -206,17 +206,17 @@ object UssdSession {
     }
 
     /**
-     * The driver saw bKash's dialog go without a word. On the amount step that is the user's back gesture:
-     * the dialog has the focus, so back closed it rather than this screen. Leave as back would have.
+     * The driver saw bKash's dialog go without a word. While the amount is still being typed nothing has
+     * been sent, so it is not a failure to show: drop the dead session and stay on the amount screen. The
+     * first PIN digit dials again, as after a warm session expires.
      */
     @Synchronized fun onDialogGone(now: Long = System.currentTimeMillis()) {
         if (!confirmed && staged?.needsAmount == true && engine?.state.let { it is RunState.Working || it is RunState.AwaitingAmount }) {
-            // Ended without a Cancel: there is no dialog left to close, and a Back would land on Chalaiden.
+            // Ended without a Cancel: there is no dialog left to close.
             engine?.onSessionLost()
             endedAt = now
             engine = null
-            staged = null
-            _current.value = null
+            publish()
             return
         }
         onSessionLost(now)

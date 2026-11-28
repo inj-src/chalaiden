@@ -15,6 +15,7 @@ import android.widget.Toast
 import com.chalaiden.app.ui.components.BlinkingCaret
 import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -241,12 +242,13 @@ fun AmountScreen(
     kind: FlowKind,
     number: String,
     groups: List<Int>?,
-    amount: String,
-    onAmount: (String) -> Unit,
+    entry: MutableState<String>,
     onPay: (amount: String) -> Unit,
     onBack: () -> Unit,
 ) {
     val t = tokens
+    // Read live in the handlers, not captured: a key pressed before the next frame must see the last one.
+    val amount = entry.value
     val value = amount.toLongOrNull() ?: 0
     val verb = when (kind) {
         FlowKind.Payment -> "Pay"
@@ -322,8 +324,8 @@ fun AmountScreen(
                 }
             }
             Keypad(
-                onKey = { if (amount.length < 6 && !(amount.isEmpty() && it == '0')) onAmount(amount + it) },
-                onBackspace = { onAmount(amount.dropLast(1)) },
+                onKey = { val a = entry.value; if (a.length < 6 && !(a.isEmpty() && it == '0')) entry.value = a + it },
+                onBackspace = { entry.value = entry.value.dropLast(1) },
                 modifier = Modifier.weight(1f, fill = false).padding(top = 28.dp),
             )
             }
@@ -332,7 +334,7 @@ fun AmountScreen(
             if (value > 0) "$verb ${"%,d".format(value)} TK" else verb,
             enabled = value > 0,
             modifier = Modifier.padding(20.dp),
-        ) { onPay(amount) }
+        ) { onPay(entry.value) }
     }
 }
 
