@@ -9,6 +9,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
@@ -170,6 +171,7 @@ private fun PinStep(flow: UssdFlow) {
         // Details, then the dots and where the PIN goes, right under the amount; the keypad takes the rest
         // and sits on the hold button. The details scroll and the keys shrink (to 40dp) before "Hold to pay"
         // is pushed off: at 200% text on a small phone all of it must still be reachable.
+        BoxWithConstraints(Modifier.weight(1f)) {
         val note = when (flow.kind) {
             FlowKind.CashOut -> "bKash adds its cash out charge to this."
             FlowKind.Balance -> "Enter your PIN to see your balance."
@@ -180,13 +182,18 @@ private fun PinStep(flow: UssdFlow) {
         // instead of taking more from the keys; it stays while typing, so the keys never resize mid-PIN.
         val notice by OneTap.pinNotice.collectAsState()
         val details = reference != null || note != null || notice != null
+        // Room for everything with the keys at their 40dp floor, the details at their 120dp cap. Short of
+        // that (a small window, a notice), it all scrolls above the button, with 48dp keys.
+        val compact = maxHeight < (if (details) 460.dp else 316.dp)
+        Column(Modifier.fillMaxSize().then(if (compact) Modifier.verticalScroll(rememberScrollState()) else Modifier)) {
         if (details) {
             Column(Modifier.heightIn(max = 120.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // The payment's own details first: what is being paid matters more than why the fingerprint didn't.
+                reference?.let { DetailRow("Reference", it) }
+                note?.let { Text(it, style = Type.body, color = t.inkSoft) }
                 notice?.let {
                     Text(it, style = Type.body, color = t.ink, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                 }
-                reference?.let { DetailRow("Reference", it) }
-                note?.let { Text(it, style = Type.body, color = t.inkSoft) }
             }
         }
         Spacer(Modifier.height(if (details) 24.dp else 8.dp))
@@ -228,8 +235,11 @@ private fun PinStep(flow: UssdFlow) {
                 UssdSession.warmUp()
             },
             onBackspace = { PinEntry.pin = PinEntry.pin.dropLast(1) },
-            modifier = Modifier.weight(1f).padding(top = 8.dp),
+            modifier = if (compact) Modifier.padding(top = 8.dp) else Modifier.weight(1f).padding(top = 8.dp),
+            keyHeight = if (compact) 48.dp else null,
         )
+        }
+        }
         Spacer(Modifier.height(12.dp))
         fun send() {
             val entered = PinEntry.pin
