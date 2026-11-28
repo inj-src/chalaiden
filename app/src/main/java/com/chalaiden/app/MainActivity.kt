@@ -655,7 +655,8 @@ class MainActivity : FragmentActivity() {
         LaunchedEffect(Unit) {
             OneTap.asks.collect { UssdSession.current.value?.let { payWithFingerprint(it.flow, settle = 0) } }
         }
-        BackHandler(enabled = stack.size > 1 && stack.last() != Screen.Running) { pop() }
+        // A result is the end of its run: back goes home, as Done does, not through the screens that led to it.
+        BackHandler(enabled = stack.size > 1 && stack.last() != Screen.Running) { if (stack.last() is Screen.Result) home() else pop() }
         // On the PIN screen, back leaves it (closing a warm menu); once paying, back does nothing.
         BackHandler(enabled = stack.lastOrNull() == Screen.Running && session?.confirmed == false) {
             PinEntry.reset()
