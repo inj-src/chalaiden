@@ -178,6 +178,16 @@ class Prefs(context: Context) {
         get() = sp.getInt("home_design", 0)
         set(value) = sp.edit().putInt("home_design", value).apply()
 
+    /** How many times Chalaiden has been opened, counted up to 2: One Tap is offered on the second. */
+    var opens: Int
+        get() = sp.getInt("opens", 0)
+        set(value) = sp.edit().putInt("opens", value.coerceAtMost(2)).apply()
+
+    /** One Tap's offer has been shown. It is shown once, ever; after that it lives in Home's ⋮ menu. */
+    var oneTapOffered: Boolean
+        get() = sp.getBoolean("one_tap_offered", false)
+        set(value) = sp.edit().putBoolean("one_tap_offered", value).apply()
+
     /** The keyboard a running session switched off, until it is switched back on. */
     var imeToRestore: String?
         get() = sp.getString("ime_to_restore", null)

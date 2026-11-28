@@ -1,5 +1,6 @@
 package com.chalaiden.app
 
+import android.widget.Toast
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
@@ -63,6 +64,8 @@ import com.chalaiden.app.ui.SetupScreen
 import com.chalaiden.app.ui.MethodGuideScreen
 import com.chalaiden.app.ui.AboutScreen
 import com.chalaiden.app.ui.UpdateSheet
+import com.chalaiden.app.ui.OneTapOfferSheet
+import com.chalaiden.app.ui.WrongPinSheet
 import com.chalaiden.app.ui.UpdatesScreen
 import com.chalaiden.app.update.Updates
 import com.chalaiden.app.ui.theme.ChalaidenTheme
@@ -100,7 +103,8 @@ private sealed interface Screen {
     data class MethodGuide(val method: Method) : Screen
     data object About : Screen
     data object Updates : Screen
-    data object OneTap : Screen
+    /** [change]: open straight on typing a new PIN (after bKash refused the saved one). */
+    data class OneTap(val change: Boolean = false) : Screen
 }
 
 // A FragmentActivity because One Tap's fingerprint sheet (androidx BiometricPrompt) is hosted by one.
@@ -160,6 +164,7 @@ class MainActivity : FragmentActivity() {
         enableEdgeToEdge(SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT), SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT))
         RunCover.attach(this)
         OneTap.init(this)
+        if (savedInstanceState == null) prefs.opens += 1
         GuideSession.bind(this)
         GuideCover.attach(this)
         // "Hold to pay" is pressed on the cover, but only a foreground activity can dial *247#.
@@ -378,6 +383,10 @@ class MainActivity : FragmentActivity() {
     /** Nothing left to set up: automatic answering works, or the user chose guided mode. */
     private fun ready() = phoneReady() && inUse() != null
 
+    /** One Tap's one-time offer: second open or later, set up, answering bKash itself, a fingerprint on the phone. */
+    private fun offerOneTap(): Boolean = !prefs.oneTapOffered && prefs.opens >= 2 && ready() &&
+        inUse() != Method.Guided && !OneTap.saved.value && OneTap.readiness(this) == OneTap.Readiness.Ready
+
     /** A killed session left the keyboards off, and neither root nor Shizuku is here to turn them back on. */
     private fun keyboardOff(): Boolean = prefs.imeToRestore != null && !UssdSession.isActive &&
         runCatching { getSystemService(android.view.inputmethod.InputMethodManager::class.java).enabledInputMethodList.isEmpty() }
@@ -433,7 +442,7 @@ class MainActivity : FragmentActivity() {
         askedFor = null
         OneTap.usedThisRun = false
         OneTap.pinNotice.value = null
-        OneTap.resultNotice.value = null
+        OneTap.wrongPin.value = false
         UssdSession.prepare(flow)
         push(Screen.Running)
     }
@@ -520,12 +529,9 @@ class MainActivity : FragmentActivity() {
             val state = s.state
             if (state is RunState.Finished && stack.lastOrNull() == Screen.Running) {
                 PinEntry.reset() // digits typed before a failure while walking the menu
-                // bKash refused the saved One Tap PIN: remove it, or every payment would try it again.
+                // bKash refused the saved One Tap PIN: the result asks the user what to do with it.
                 val o = state.outcome
-                if (OneTap.usedThisRun && o is Outcome.Failed && o.pinSent && OneTap.isWrongPin(o.message)) {
-                    OneTap.forget(this@MainActivity)
-                    OneTap.resultNotice.value = "That was your saved One Tap PIN, so Chalaiden removed it. Save the right one in ⋮ → One Tap."
-                }
+                OneTap.wrongPin.value = OneTap.usedThisRun && o is Outcome.Failed && o.pinSent && OneTap.isWrongPin(o.message)
                 showResult(s.flow, state.outcome)
                 if (state.outcome is Outcome.Success && s.flow.kind == FlowKind.Payment) prefs.scanLearned = true
                 UssdSession.clear()
@@ -583,14 +589,26 @@ class MainActivity : FragmentActivity() {
               val update by Updates.state.collectAsState()
               val release = (update as? Updates.State.Available)?.release
               var sheetGone by remember { mutableStateOf(false) }
-              if (release != null && fake == null && !sheetGone && !Updates.snoozed(this)) {
-                  UpdateSheet(release) { Updates.snooze(this); sheetGone = true }
+              val updateUp = release != null && fake == null && !sheetGone && !Updates.snoozed(this)
+              if (updateUp) UpdateSheet(release!!) { Updates.snooze(this); sheetGone = true }
+              // One Tap is offered once, on the second open, where it can work; never over the update sheet.
+              var offerGone by remember { mutableStateOf(false) }
+              val offer = !updateUp && fake == null && !offerGone && setupTick.let { offerOneTap() }
+              if (offer) {
+                  LaunchedEffect(Unit) { prefs.oneTapOffered = true } // shown is offered, even if the app is closed now
+                  OneTapOfferSheet(
+                      onSetUp = { offerGone = true; push(Screen.OneTap()) },
+                      onLater = {
+                          offerGone = true
+                          Toast.makeText(this, "One Tap is always in the ⋮ menu on Home.", Toast.LENGTH_LONG).show()
+                      },
+                  )
               }
               HomeScreen(
                 sims = fake?.sims ?: Dialer.sims(this),
                 simId = if (fake != null) fake.simId else setupTick.let { simId() }, // re-read after a SIM change
                 onSelectSim = { prefs.simSubscriptionId = it; setupTick++ },
-                setupDone = fake?.setupDone ?: ready(),
+                setupDone = fake?.setupDone ?: setupTick.let { ready() }, // re-read once a slow root check ends
                 keyboardOff = fake?.keyboardOff ?: setupTick.let { keyboardOff() },
                 onFixKeyboard = { runCatching { startActivity(Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS)) } },
                 onPay = { push(Screen.Scan(FlowKind.Payment)) },
@@ -598,7 +616,7 @@ class MainActivity : FragmentActivity() {
                 onCashOut = { push(Screen.Number(FlowKind.CashOut, "", null)) },
                 onBalance = { start(Flows.balance()) },
                 onSetup = { push(Screen.Setup(then = null)) },
-                onOneTap = { push(Screen.OneTap) },
+                onOneTap = { push(Screen.OneTap()) },
                 onAbout = { push(Screen.About) },
                 onUpdates = { push(Screen.Updates) },
                 updateAvailable = release != null,
@@ -642,7 +660,14 @@ class MainActivity : FragmentActivity() {
             )
             // The same screen the cover shows over the phone's dialogs; seen here if the cover can't be drawn.
             Screen.Running -> RunOverlay()
-            is Screen.Result -> ResultScreen(
+            is Screen.Result -> {
+              val wrongPin by OneTap.wrongPin.collectAsState()
+              if (wrongPin) WrongPinSheet(
+                  onChange = { OneTap.wrongPin.value = false; home(); push(Screen.OneTap(change = true)) },
+                  onRemove = { OneTap.wrongPin.value = false; OneTap.forget(this) },
+                  onKeep = { OneTap.wrongPin.value = false },
+              )
+              ResultScreen(
                 flow = screen.flow,
                 outcome = screen.outcome,
                 onRetry = { pop(); start(screen.flow) },
@@ -651,7 +676,8 @@ class MainActivity : FragmentActivity() {
                 wave = screen.wave,
                 waveFrom = waveFrom,
                 onWaveDone = { waveFrom = null },
-            )
+              )
+            }
             is Screen.Setup -> SetupScreen(
                 prefs = prefs,
                 rootOk = rootOk,
@@ -678,7 +704,7 @@ class MainActivity : FragmentActivity() {
             )
             Screen.About -> AboutScreen(onBack = ::pop)
             Screen.Updates -> UpdatesScreen(onBack = ::pop)
-            Screen.OneTap -> OneTapScreen(guided = setupTick.let { inUse() } == Method.Guided, onBack = ::pop)
+            is Screen.OneTap -> OneTapScreen(guided = setupTick.let { inUse() } == Method.Guided, change = screen.change, onBack = ::pop)
         }
     }
 
