@@ -42,6 +42,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -90,14 +92,16 @@ fun RunOverlay() {
     val snap by UssdSession.current.collectAsState()
     val t = tokens
     val s = snap
-    if (s == null || s.state is RunState.Finished) {
+    val shown by StepReplay.shown.collectAsState()
+    // A payment that went through still finishes ticking off its steps before this gives way.
+    if (s == null || (s.state is RunState.Finished && StepReplay.caughtUp(s, shown))) {
         // Between the end of a session and the phone's last dialog closing (or a trailing bKash prompt).
         Box(Modifier.fillMaxSize().background(t.bg).systemBarsPadding()) { Waiting("Closing the bKash menu…") }
         return
     }
     val phase = when {
         !s.confirmed -> Phase.Pin
-        s.state is RunState.Working -> Phase.Progress
+        !StepReplay.caughtUp(s, shown) -> Phase.Progress
         (s.state as? RunState.AwaitingPin)?.feeToConfirm != null -> Phase.Fee
         else -> Phase.Confirming
     }
@@ -116,7 +120,8 @@ fun RunOverlay() {
             ) { p ->
                 when (p) {
                     Phase.Pin -> PinStep(s.flow)
-                    Phase.Progress -> Progress(s.flow, (s.state as? RunState.Working)?.stepIndex ?: 0)
+                    // Before the PIN has gone, Cancel stops it; after, it would only leave the outcome unknown.
+                    Phase.Progress -> Progress(s.flow, shown ?: 0, cancellable = s.state is RunState.Working || s.state is RunState.AwaitingPin)
                     Phase.Fee -> (s.state as? RunState.AwaitingPin)?.let { FeeStep(s.flow, it) } ?: Waiting("")
                     Phase.Confirming -> Waiting("Confirming with bKash…")
                 }
@@ -256,7 +261,7 @@ private fun PinStep(flow: UssdFlow) {
 
 
 @Composable
-private fun Progress(flow: UssdFlow, current: Int) {
+private fun Progress(flow: UssdFlow, current: Int, cancellable: Boolean) {
     val t = tokens
     // Each line says what is happening ("Entering amount"), then, once done, what happened ("Entered amount").
     val labels: List<Pair<String, String>> = listOf("Opening bKash menu" to "Opened bKash menu") + flow.steps.dropLast(1).map {
@@ -300,7 +305,9 @@ private fun Progress(flow: UssdFlow, current: Int) {
             style = Type.label, color = t.inkSoft, textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
         )
-        TextAction("Cancel", Modifier.align(Alignment.CenterHorizontally)) { UssdSession.cancel() }
+        // Faded rather than removed, so the line above doesn't jump as the replay catches up.
+        val opacity by animateFloatAsState(if (cancellable) 1f else 0f, tween(160), label = "cancel")
+        TextAction("Cancel", Modifier.align(Alignment.CenterHorizontally).alpha(opacity), enabled = cancellable) { UssdSession.cancel() }
     }
 }
 

@@ -89,9 +89,11 @@ object RunCover {
             // Up for the session, and after it until the phone's last dialog has actually closed.
             // Down while One Tap's fingerprint sheet is up: this layer sits above it and would hide it. Only
             // before anything is dialled: once bKash's menu is up, the cover comes back whatever One Tap says.
-            combine(UssdSession.current, UssdDriver.dialogUp, OneTap.prompting) { snap, dialogUp, prompting ->
+            combine(UssdSession.current, UssdDriver.dialogUp, OneTap.prompting, StepReplay.shown) { snap, dialogUp, prompting, replayed ->
                 val sheet = prompting && snap?.state == RunState.Ready && !dialogUp
-                ((snap != null && snap.state !is RunState.Finished) || dialogUp) && !sheet
+                // A payment that went through stays covered until its step list has finished ticking off.
+                val live = snap != null && (snap.state !is RunState.Finished || !StepReplay.caughtUp(snap, replayed))
+                (live || dialogUp) && !sheet
             }
                 .distinctUntilChanged()
                 .collectLatest { running ->

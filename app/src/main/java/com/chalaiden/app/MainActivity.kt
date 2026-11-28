@@ -64,6 +64,7 @@ import com.chalaiden.app.ui.NumberScreen
 import com.chalaiden.app.ui.ResultScreen
 import com.chalaiden.app.ui.RunCover
 import com.chalaiden.app.ui.PinEntry
+import com.chalaiden.app.ui.StepReplay
 import com.chalaiden.app.ui.RunOverlay
 import com.chalaiden.app.ui.theme.tokens
 import com.chalaiden.app.ui.ScanScreen
@@ -176,6 +177,7 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT), SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT))
         RunCover.attach(this)
+        StepReplay.attach()
         OneTap.init(this)
         if (savedInstanceState == null) prefs.opens += 1 // and in onStart, when it comes back after a while
         GuideSession.bind(this)
@@ -609,11 +611,13 @@ class MainActivity : FragmentActivity() {
     @Composable
     private fun App() {
         val session by UssdSession.current.collectAsState()
-        LaunchedEffect(session) {
+        val replayed by StepReplay.shown.collectAsState()
+        LaunchedEffect(session, replayed) {
             // Left the PIN screen without paying: back to where the user came from.
             val s = session ?: return@LaunchedEffect run { if (stack.lastOrNull() == Screen.Running) pop() }
             val state = s.state
-            if (state is RunState.Finished && stack.lastOrNull() == Screen.Running) {
+            // A payment that went through waits for the step list to finish ticking off (see StepReplay).
+            if (state is RunState.Finished && stack.lastOrNull() == Screen.Running && StepReplay.caughtUp(s, replayed)) {
                 PinEntry.reset() // digits typed before a failure while walking the menu
                 // bKash refused the saved One Tap PIN: the result asks the user what to do with it.
                 val o = state.outcome
