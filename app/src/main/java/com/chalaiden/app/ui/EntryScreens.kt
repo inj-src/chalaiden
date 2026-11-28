@@ -80,6 +80,7 @@ import com.chalaiden.app.ui.components.Chip
 import com.chalaiden.app.ui.components.Keypad
 import com.chalaiden.app.ui.components.capScale
 import com.chalaiden.app.ui.components.PrimaryButton
+import com.chalaiden.app.ui.components.HoldToConfirm
 import com.chalaiden.app.ui.components.TopBar
 import com.chalaiden.app.ui.theme.Type
 import com.chalaiden.app.ui.theme.tokens
@@ -255,6 +256,7 @@ fun AmountScreen(
     entry: MutableState<String>,
     onPay: (amount: String) -> Unit,
     onBack: () -> Unit,
+    hold: Boolean = false,
 ) {
     val t = tokens
     // Read live in the handlers, not captured: a key pressed before the next frame must see the last one.
@@ -340,11 +342,21 @@ fun AmountScreen(
             )
             }
         }
-        PrimaryButton(
-            if (value > 0) "$verb ${"%,d".format(value)} TK" else verb,
-            enabled = value > 0,
-            modifier = Modifier.padding(20.dp),
-        ) { onPay(entry.value) }
+        if (hold) {
+            // One Tap's fingerprint already unlocked the PIN: no PIN screen follows, so this is where money
+            // moves, and it takes a hold, as "Hold to pay" does.
+            HoldToConfirm(
+                if (value > 0) "Hold to ${verb.lowercase()} ${"%,d".format(value)} TK" else "Hold to ${verb.lowercase()}",
+                enabled = value > 0,
+                modifier = Modifier.padding(20.dp),
+            ) { onPay(entry.value) }
+        } else {
+            PrimaryButton(
+                if (value > 0) "$verb ${"%,d".format(value)} TK" else verb,
+                enabled = value > 0,
+                modifier = Modifier.padding(20.dp),
+            ) { onPay(entry.value) }
+        }
     }
 }
 

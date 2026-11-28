@@ -510,4 +510,15 @@ class UssdEngineTest {
         assertTrue(!UssdSession.current.value!!.confirmed)
         UssdSession.clear()
     }
+
+    /** With One Tap's PIN unlocked, the amount screen's button is the last step and becomes a hold. */
+    @Test fun heldPinShowsOnTheAmountScreen() {
+        earlyToAmount()
+        assertTrue(!UssdSession.current.value!!.pinHeld)
+        UssdSession.holdPin("12345")
+        assertTrue(UssdSession.current.value!!.pinHeld)
+        UssdSession.supplyAmount("10")
+        assertTrue(!UssdSession.current.value!!.pinHeld)
+        UssdSession.clear()
+    }
 }

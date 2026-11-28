@@ -348,7 +348,7 @@ class MainActivity : FragmentActivity() {
             )
             when (target) {
                 is DebugDemo.Target.Run -> {
-                    UssdSession.debugShow(UssdSession.Snapshot(target.flow, target.state, target.confirmed))
+                    UssdSession.debugShow(UssdSession.Snapshot(target.flow, target.state, target.confirmed, target.pinHeld))
                     stack.clear(); stack += listOf(Screen.Home, Screen.Running)
                 }
                 is DebugDemo.Target.Result -> {

@@ -39,7 +39,7 @@ internal object DebugDemo {
     }
 
     sealed interface Target {
-        data class Run(val flow: UssdFlow, val state: RunState, val confirmed: Boolean) : Target
+        data class Run(val flow: UssdFlow, val state: RunState, val confirmed: Boolean, val pinHeld: Boolean = false) : Target
         data class Result(val flow: UssdFlow, val outcome: Outcome) : Target
         data class Receipt(val flow: UssdFlow, val outcome: Outcome.Success) : Target
     }
@@ -59,6 +59,8 @@ internal object DebugDemo {
         )
         return when (state) {
             "pin" -> Target.Run(flow, RunState.Ready, confirmed = false)
+            // One Tap unlocked on the number screen, amount not typed yet: the amount screen's hold button.
+            "amount_hold" -> Target.Run(flow.withAmount(null).copy(amountLater = true), RunState.Ready, confirmed = false, pinHeld = true)
             "working" -> Target.Run(flow, RunState.Working(2, "Entering the number"), confirmed = true)
             "fee" -> Target.Run(flow, RunState.AwaitingPin(feeDetails(flow, worst), System.currentTimeMillis(), feeToConfirm = if (worst) "Tk 18,499.99" else "Tk 9.25"), confirmed = true)
             "confirming" -> Target.Run(flow, RunState.AwaitingPin(emptyList(), System.currentTimeMillis()), confirmed = true)

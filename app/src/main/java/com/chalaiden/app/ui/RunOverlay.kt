@@ -142,6 +142,7 @@ fun RunOverlay() {
                 entry = AmountEntry.amount,
                 onPay = UssdSession::supplyAmount,
                 onBack = UssdSession::abandon,
+                hold = s.pinHeld,
             )
         } else {
             RunBody(if (typing) lastBody[0] else s)

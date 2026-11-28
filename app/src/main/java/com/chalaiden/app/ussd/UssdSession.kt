@@ -30,8 +30,11 @@ object UssdSession {
      */
     const val WARM_EXPIRY_MILLIS = PIN_WINDOW_MILLIS - 30_000L
 
-    /** [confirmed]: the user finished "Hold to pay". Until then the PIN screen stays up, even while the menu warms up. */
-    data class Snapshot(val flow: UssdFlow, val state: RunState, val confirmed: Boolean = false)
+    /**
+     * [confirmed]: the user finished "Hold to pay". Until then the PIN screen stays up, even while the menu warms up.
+     * [pinHeld]: One Tap already unlocked the PIN, so the amount screen's button is the last step and is held.
+     */
+    data class Snapshot(val flow: UssdFlow, val state: RunState, val confirmed: Boolean = false, val pinHeld: Boolean = false)
 
     private val _current = MutableStateFlow<Snapshot?>(null)
     val current: StateFlow<Snapshot?> = _current.asStateFlow()
@@ -139,6 +142,7 @@ object UssdSession {
         if (staged?.amountLater != true || confirmed) return
         heldPin = pin
         heldAt = now
+        publish()
     }
 
     /**
@@ -297,8 +301,8 @@ object UssdSession {
     private fun publish() {
         val e = engine
         _current.value = when {
-            e != null -> Snapshot(e.flow, e.state, confirmed)
-            staged != null -> Snapshot(staged!!, RunState.Ready, confirmed)
+            e != null -> Snapshot(e.flow, e.state, confirmed, heldPin != null)
+            staged != null -> Snapshot(staged!!, RunState.Ready, confirmed, heldPin != null)
             else -> null
         }
     }
