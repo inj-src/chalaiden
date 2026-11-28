@@ -153,6 +153,8 @@ object UssdDriver {
             screen = ui
             trace("$backend screen: ${ui::class.simpleName}, keyboards off: ${keyboards?.lines()?.size ?: if (keyboardHidden) "hidden" else 0}")
             sweep(ui)
+            // Left before the dial (Cancel while the driver set up): dial nothing.
+            if (!current() || !UssdSession.isActive) return
             dial()
             trace("dialled")
 

@@ -83,6 +83,13 @@ class UssdEngineTest {
         assertEquals(Action.Cancel, e.onDialog(prompt(paymentConfirm.replace("Amount: Tk 10", "Amount: Tk 10 000.00"))))
     }
 
+    @Test fun unreadableAmountNeverMatchesAnUnreadableSummary() {
+        val e = UssdEngine(Flows.payment("01783007004", "10", "test").copy(amount = "ten"))
+        e.presetPin("12345")
+        walkPayment(e)
+        assertEquals(Action.Cancel, e.onDialog(prompt(paymentConfirm.replace("Amount: Tk 10", "Amount: Tk --"))))
+    }
+
     @Test fun thousandsSeparatorStillMatches() {
         val e = UssdEngine(Flows.payment("01783007004", "1000", "test"))
         e.presetPin("12345")

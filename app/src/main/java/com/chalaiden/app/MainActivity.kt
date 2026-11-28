@@ -393,6 +393,9 @@ class MainActivity : FragmentActivity() {
             com.chalaiden.app.ussd.UssdProbe.send(this, intent.getStringExtra("ussd_probe").orEmpty(), simId())
         }
         if (intent?.action == ACTION_SCAN && !UssdSession.isActive) {
+            // A run waiting on its PIN screen (nothing confirmed) gives way to the scan.
+            PinEntry.reset()
+            UssdSession.abandon()
             stack.clear()
             stack += listOf(Screen.Home, Screen.Scan(FlowKind.Payment))
         }
@@ -481,7 +484,8 @@ class MainActivity : FragmentActivity() {
         OneTap.pinNotice.value = null
         OneTap.wrongPin.value = false
         UssdSession.prepare(flow)
-        push(Screen.Running)
+        // A second tap on Pay before the first screen change landed: one run screen, not two.
+        if (stack.lastOrNull() != Screen.Running) push(Screen.Running)
     }
 
     /** Counts runs, so a fingerprint sheet that was on its way for one run never sends a PIN into the next. */
@@ -598,11 +602,13 @@ class MainActivity : FragmentActivity() {
         // Root unless only Shizuku works; a backend that has gone since ends the session as not started.
         UssdDriver.start(this, flow, backend() ?: Backend.Root) {
             withContext(Dispatchers.Main) {
+                // Left while the driver got ready: nothing to dial for (the driver checks this too).
+                if (!UssdSession.isActive) return@withContext
                 runCatching {
                     startActivity(Dialer.callIntent(this@MainActivity, sim))
                 }.onFailure {
                     UssdSession.clear()
-                    replaceTop(Screen.Result(flow, Outcome.Failed("Couldn't dial *247#. Check your SIM and phone permissions, then try again.", pinSent = false, fromBkash = false)))
+                    if (stack.lastOrNull() == Screen.Running) replaceTop(Screen.Result(flow, Outcome.Failed("Couldn't dial *247#. Check your SIM and phone permissions, then try again.", pinSent = false, fromBkash = false)))
                 }
             }
         }

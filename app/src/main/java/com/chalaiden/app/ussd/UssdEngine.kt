@@ -203,7 +203,9 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
             if (digits(details["to"]) != digits(want)) return mismatch(text)
         }
         flow.amount?.let { want ->
-            if (amountOf(details["amount"]) != amountOf(want)) return mismatch(text)
+            // An amount that can't be read never matches, not even a summary whose amount can't be read either.
+            val wanted = amountOf(want) ?: return mismatch(text)
+            if (amountOf(details["amount"]) != wanted) return mismatch(text)
         }
         // A fee Chalaiden can't read is shown too, rather than taken as free.
         val fee = (details["fee"] ?: details["charge"])?.takeIf { amountOf(it).let { a -> a == null || a > 0.0 } }
