@@ -11,6 +11,9 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalTextToolbar
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalFocusManager
+import com.chalaiden.app.ui.components.TextAction
 import android.widget.Toast
 import com.chalaiden.app.ui.components.BlinkingCaret
 import androidx.compose.runtime.key
@@ -157,16 +160,16 @@ fun NumberScreen(
                     }
                     .semantics { customActions = listOf(CustomAccessibilityAction("Paste") { paste(); true }) },
             )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                when {
-                    valid -> if (crop != null) "Check every digit against the photo." else " "
-                    number.length == 11 -> "That isn't a mobile number. It should start with 013 to 019."
-                    else -> "${11 - number.length} more digit${if (11 - number.length == 1) "" else "s"}"
-                },
-                style = Type.label,
-                color = if (number.length == 11 && !valid) t.error else t.inkSoft,
-            )
+            // Only a wrong number, or the reminder to check a scanned one: the chips sit right under the number.
+            val note = when {
+                valid -> if (crop != null) "Check every digit against the photo." else null
+                number.length == 11 -> "That isn't a mobile number. It should start with 013 to 019."
+                else -> null
+            }
+            if (note != null) {
+                Spacer(Modifier.height(10.dp))
+                Text(note, style = Type.label, color = if (valid) t.inkSoft else t.error)
+            }
             if (crop == null) {
                 FlowRow(
                     Modifier.fillMaxWidth().padding(top = 12.dp),
@@ -189,8 +192,17 @@ fun NumberScreen(
 
 /** Amount plus an optional reference. Starts the bKash session on continue. */
 @Composable
-fun AmountScreen(kind: FlowKind, number: String, groups: List<Int>?, onPay: (amount: String, reference: String) -> Unit, onBack: () -> Unit) {
+fun AmountScreen(
+    kind: FlowKind,
+    number: String,
+    groups: List<Int>?,
+    onPay: (amount: String, reference: String) -> Unit,
+    onBack: () -> Unit,
+    onCancel: () -> Unit,
+) {
     val t = tokens
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focus = LocalFocusManager.current
     var amount by rememberSaveable { mutableStateOf("") }
     var reference by rememberSaveable { mutableStateOf("") }
     var showReference by rememberSaveable { mutableStateOf(false) }
@@ -301,8 +313,15 @@ fun AmountScreen(kind: FlowKind, number: String, groups: List<Int>?, onPay: (amo
         PrimaryButton(
             if (value > 0) "$verb ${"%,d".format(value)} TK" else verb,
             enabled = value > 0,
-            modifier = Modifier.padding(20.dp),
-        ) { onPay(amount, reference.trim()) }
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp),
+        ) {
+            // The reference's keyboard goes with this screen, not over the PIN keypad.
+            focus.clearFocus()
+            keyboard?.hide()
+            onPay(amount, reference.trim())
+        }
+        // As on the PIN screen: under the button, where the thumb already is.
+        TextAction("Cancel", Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp, bottom = 12.dp), onClick = onCancel)
     }
 }
 

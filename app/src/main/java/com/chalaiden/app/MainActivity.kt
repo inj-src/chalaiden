@@ -776,6 +776,7 @@ class MainActivity : FragmentActivity() {
                     )
                 },
                 onBack = ::pop,
+                onCancel = ::home,
             )
             // The same screen the cover shows over the phone's dialogs; seen here if the cover can't be drawn.
             Screen.Running -> RunOverlay()
