@@ -131,17 +131,18 @@ fun HomeScreen(
     Box(Modifier.fillMaxSize().background(t.bg).systemBarsPadding()) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
             Column {
-                // The logo sits up here beside the menu rather than in the hero, so the hero starts higher.
+                // The logo heads the screen on the left, across from the menu, rather than in the hero,
+                // so the hero starts higher.
                 Row(
                     Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 20.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.End,
                 ) {
                     Image(
                         painterResource(R.drawable.logo_mark),
                         contentDescription = "Chalaiden",
                         modifier = Modifier.height(28.dp).aspectRatio(42f / 36f).semantics { heading() },
                     )
+                    Spacer(Modifier.weight(1f))
                     HomeMenu(onSetup, onAbout, onUpdates, updateAvailable, Modifier.offset(x = 12.dp))
                 }
                 // The brand comes in more than one design; a swipe left or right changes it. Edge to edge, so a
