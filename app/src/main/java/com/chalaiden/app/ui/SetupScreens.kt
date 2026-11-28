@@ -381,12 +381,22 @@ private fun AutomaticStep(a11yOk: Boolean, inUse: Method?, onHelp: () -> Unit) {
         "Chalaiden goes through bKash's menu behind its own screen. You only type your PIN.",
     )
     if (a11yOk) {
+        ReadyArt()
+        Spacer(Modifier.height(20.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Tick(18)
-            Spacer(Modifier.width(8.dp))
-            Text(if (inUse == Method.Accessibility) "It's on" else "It's on. Tap Use this to switch to it.", style = Type.label, color = t.ink)
+            Tick(22)
+            Spacer(Modifier.width(10.dp))
+            Text("Automatic is on", style = Type.title, color = t.ink)
         }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            if (inUse == Method.Accessibility) "Nothing else to set up. Chalaiden answers bKash for you on this phone."
+            else "Tap Use this to switch to it from the way you use now.",
+            style = Type.label.copy(lineHeight = 20.sp), color = t.inkSoft,
+        )
     } else {
+        AccessibilityArt()
+        Spacer(Modifier.height(20.dp))
         Text(
             "Turn on Chalaiden once in your phone's Accessibility settings. It only reads the phone's bKash menu.",
             style = Type.label.copy(lineHeight = 20.sp), color = t.inkSoft,

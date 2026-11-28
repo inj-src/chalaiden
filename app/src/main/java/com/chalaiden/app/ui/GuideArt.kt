@@ -466,6 +466,52 @@ fun AccessibilityArt() = Art(4400) { c ->
     }
 }
 
+/**
+ * Setup's "it's on" picture: the switch already on, and under it Chalaiden going through bKash's menu by
+ * itself, one step ticking off after another, until it waits for the PIN.
+ */
+@Composable
+fun ReadyArt() = Art(5200) { c ->
+    val t = tokens
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(t.raised).padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ChalaidenTile(26)
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Use Chalaiden", style = Small, color = t.ink)
+            Text("On", style = Tiny, color = t.inkSoft)
+        }
+        Toggle(1f)
+    }
+    Spacer(Modifier.height(12.dp))
+    listOf("Opening bKash menu" to 0.12f, "Choosing Payment" to 0.3f, "Filling in the details" to 0.48f).forEach { (label, at) ->
+        val ticked = c.pop(at, at + 0.08f)
+        Row(Modifier.padding(vertical = 3.dp).graphicsLayer { alpha = 0.35f + 0.65f * c.span(at - 0.06f, at) }, verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(15.dp), contentAlignment = Alignment.Center) {
+                if (c >= at) CheckDot(Modifier.graphicsLayer { scaleX = ticked; scaleY = ticked })
+                else Box(Modifier.size(13.dp).clip(CircleShape).border(1.5.dp, t.line, CircleShape))
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(label, style = Small, color = t.ink)
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    val pin = c.pop(0.66f, 0.76f)
+    if (c >= 0.66f) {
+        Row(
+            Modifier.graphicsLayer { scaleX = pin; scaleY = pin }
+                .clip(RoundedCornerShape(50)).background(t.raised).padding(horizontal = 12.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(AppIcons.Lock, null, tint = t.ink, modifier = Modifier.size(11.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Your PIN, and it's done", style = Small, color = t.ink)
+        }
+    }
+}
+
 /** bKash asks; the Chalaiden keyboard types the reply into its box by itself; Send; the card moves on. */
 @Composable
 fun AutoFillArt() = Art(5200) { c ->
