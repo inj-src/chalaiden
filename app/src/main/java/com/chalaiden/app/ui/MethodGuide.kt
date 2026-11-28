@@ -127,7 +127,7 @@ fun MethodGuideScreen(
         Method.Root -> "root"
         Method.Shizuku -> "Shizuku"
         Method.Guided -> "guided mode"
-        Method.Accessibility -> "Accessibility"
+        Method.Accessibility -> "Automatic"
     }
 
     Column(Modifier.fillMaxSize().background(t.bg).systemBarsPadding()) {
@@ -136,7 +136,7 @@ fun MethodGuideScreen(
                 Method.Shizuku -> "Set up Shizuku"
                 Method.Root -> "Set up root"
                 Method.Guided -> "Guided mode"
-                Method.Accessibility -> "Set up Accessibility"
+                Method.Accessibility -> "Turn on Automatic"
             },
             onBack,
         )
