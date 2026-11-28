@@ -37,6 +37,9 @@ sealed interface RunState {
     data object Ready : RunState
     data class Working(val stepIndex: Int, val label: String) : RunState
 
+    /** bKash asks for the amount, and the user is still typing it (see [UssdFlow.amountLater]). */
+    data class AwaitingAmount(val stepIndex: Int, val sinceMillis: Long) : RunState
+
     /**
      * bKash's confirmation is up and waits for the PIN. [feeToConfirm]: the PIN was entered up front,
      * but bKash added a fee the user hasn't seen, so it waits for one more go-ahead.
@@ -56,7 +59,11 @@ sealed interface RunState {
  * Safety rule: before the PIN is sent any mismatch cancels the session (no money can move).
  * After the PIN is sent nothing is ever answered automatically again.
  */
-class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::currentTimeMillis) {
+class UssdEngine(flow: UssdFlow, private val clock: () -> Long = System::currentTimeMillis) {
+    /** The flow being walked; it gains its amount once the user has typed it ([supplyAmount]). */
+    var flow: UssdFlow = flow
+        private set
+
     var state: RunState = RunState.Working(0, "Opening bKash menu")
         private set
 
@@ -64,6 +71,9 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
 
     /** The confirmation prompt the PIN answered; it can linger on screen after the PIN is sent. */
     private var pinPrompt: String? = null
+
+    /** bKash's amount prompt, waiting for the amount the user is typing. */
+    private var amountPrompt: String? = null
     private var resumeDeclines = 0
 
     /** Entered before bKash asked for it; sent only once bKash's summary matches the flow. Wiped once used. */
@@ -89,6 +99,13 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
 
         return when (val s = state) {
             is RunState.Working -> advance(s.stepIndex, dialog).also { if (it is Action.Reply) answered += dialog.textOrEmpty() }
+            is RunState.AwaitingAmount -> {
+                // The same prompt again (OxygenOS redraws it) is still the question being waited on.
+                if (dialog is Dialog.Prompt && dialog.text == amountPrompt) return Action.None
+                // Anything new means bKash moved on without us: it dropped the session.
+                finish(textOf(dialog).let { Outcome.Failed(it.ifBlank { "bKash's menu timed out." }, pinSent = false, fromBkash = it.isNotBlank()) })
+                if (dialog is Dialog.Prompt) Action.Cancel else Action.Dismiss
+            }
             is RunState.AwaitingPin -> {
                 // A new dialog while we wait for the PIN means bKash dropped the session.
                 finish(textOf(dialog).let { Outcome.Failed(it.ifBlank { "bKash's menu timed out." }, pinSent = false, fromBkash = it.isNotBlank()) })
@@ -102,6 +119,21 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
             is RunState.Finished -> if (dialog is Dialog.Prompt) Action.Cancel else Action.Dismiss
             RunState.Ready -> Action.None // an engine starts at Working; Ready is the session's
         }
+    }
+
+    /**
+     * The amount the user typed while the menu was walked. Answers bKash's amount prompt if it is already
+     * waiting, else goes in when it comes. Named for that prompt, so it is never typed into another.
+     */
+    fun supplyAmount(amount: String): Action {
+        if (state is RunState.Finished || !flow.needsAmount) return Action.None
+        flow = flow.withAmount(amount)
+        val s = state as? RunState.AwaitingAmount ?: return Action.None
+        val asked = amountPrompt ?: return Action.None
+        answered += asked
+        amountPrompt = null
+        moveTo(s.stepIndex + 1)
+        return Action.Reply(amount, to = asked)
     }
 
     fun submitPin(pin: String): Action {
@@ -149,7 +181,7 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
     /** The phone app's window went away without a final message. */
     fun onSessionLost() {
         when (state) {
-            is RunState.Working, is RunState.AwaitingPin ->
+            is RunState.Working, is RunState.AwaitingAmount, is RunState.AwaitingPin ->
                 finish(Outcome.Failed("bKash's menu closed before your PIN was sent.", pinSent = false, fromBkash = false))
             RunState.Confirming ->
                 finish(Outcome.Unknown("bKash didn't reply after the PIN."))
@@ -179,6 +211,13 @@ class UssdEngine(val flow: UssdFlow, private val clock: () -> Long = System::cur
             }
             is Step.Answer -> {
                 if (!step.prompt.containsMatchIn(Prompt.lastLine(text))) return mismatch(text)
+                if (step.later && flow.needsAmount) {
+                    // Hold the prompt open until the user has typed the amount.
+                    lastChangeAt = clock()
+                    amountPrompt = text
+                    state = RunState.AwaitingAmount(index, clock())
+                    return Action.None
+                }
                 moveTo(index + 1)
                 Action.Reply(step.value)
             }

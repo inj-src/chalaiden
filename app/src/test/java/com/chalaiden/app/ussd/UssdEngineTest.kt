@@ -324,4 +324,85 @@ class UssdEngineTest {
         assertEquals("table 4", Flows.cleanReference("table <4>"))
         assertEquals("noref", Flows.cleanReference("no-ref"))
     }
+
+    /** Dialled from the number screen: the menu is walked while the amount is still being typed. */
+    @Test fun amountTypedLaterWaitsAtItsPrompt() {
+        val e = UssdEngine(Flows.payment("01783007004", null, "test"))
+        e.onDialog(prompt(menu))
+        e.onDialog(prompt("Enter Merchant bKash Account No:"))
+        assertEquals(Action.None, e.onDialog(prompt("Enter Amount:")))
+        assertTrue(e.state is RunState.AwaitingAmount)
+        // OxygenOS redraws the same prompt: still waiting, not a new question.
+        e.onDialog(Dialog.Progress)
+        assertEquals(Action.None, e.onDialog(prompt("Enter Amount:")))
+        assertEquals(Action.Reply("10", to = "Enter Amount:"), e.supplyAmount("10"))
+        assertEquals(Action.Reply("test"), e.onDialog(prompt("Enter Reference:")))
+        e.presetPin("12345")
+        assertEquals("12345", (e.onDialog(prompt(paymentConfirm)) as Action.Reply).text)
+    }
+
+    @Test fun amountTypedBeforeBkashAsksGoesInWhenItDoes() {
+        val e = UssdEngine(Flows.payment("01783007004", null, "test"))
+        e.onDialog(prompt(menu))
+        assertEquals(Action.None, e.supplyAmount("10"))
+        e.onDialog(prompt("Enter Merchant bKash Account No:"))
+        assertEquals(Action.Reply("10"), e.onDialog(prompt("Enter Amount:")))
+    }
+
+    @Test fun summaryMustMatchTheAmountTypedLater() {
+        val e = UssdEngine(Flows.payment("01783007004", null, "test"))
+        e.onDialog(prompt(menu))
+        e.onDialog(prompt("Enter Merchant bKash Account No:"))
+        e.onDialog(prompt("Enter Amount:"))
+        e.supplyAmount("10")
+        e.onDialog(prompt("Enter Reference:"))
+        e.presetPin("12345")
+        assertEquals(Action.Cancel, e.onDialog(prompt(paymentConfirm.replace("Amount: Tk 10", "Amount: Tk 100"))))
+    }
+
+    private fun earlyToAmount() {
+        val flow = Flows.payment("01783007004", null, "test")
+        UssdSession.prepare(flow)
+        UssdSession.begin(flow)
+        listOf(menu, "Enter Merchant bKash Account No:", "Enter Amount:").forEach { UssdSession.onDialog(prompt(it)) }
+        assertTrue(UssdSession.current.value!!.state is RunState.AwaitingAmount)
+    }
+
+    @Test fun bkashDroppingTheAmountWaitQuietlyRearms() {
+        earlyToAmount()
+        UssdSession.onDialog(Dialog.Notice("Session timed out"))
+        val snap = UssdSession.current.value!!
+        assertEquals(RunState.Ready, snap.state)
+        assertTrue(snap.flow.needsAmount)
+        UssdSession.supplyAmount("10")
+        assertEquals("10", UssdSession.current.value!!.flow.amount)
+        UssdSession.clear()
+    }
+
+    @Test fun amountWaitIsClosedBeforeBkashWouldDropIt() {
+        earlyToAmount()
+        val late = System.currentTimeMillis() + UssdSession.WARM_EXPIRY_MILLIS + 1_000L
+        assertEquals(Action.Cancel, UssdSession.checkStall(now = late))
+        assertEquals(RunState.Ready, UssdSession.current.value!!.state)
+        UssdSession.clear()
+    }
+
+    /** Back on the amount step goes to bKash's dialog, which has the focus: it closes, and so does the run. */
+    @Test fun dialogClosedOnTheAmountStepLeavesTheRun() {
+        earlyToAmount()
+        UssdSession.onDialogGone()
+        assertEquals(null, UssdSession.current.value)
+        assertTrue(!UssdSession.isActive)
+        UssdSession.clear()
+    }
+
+    @Test fun backFromPinReturnsToTheAmount() {
+        earlyToAmount()
+        UssdSession.supplyAmount("10")
+        UssdSession.editAmount()
+        val snap = UssdSession.current.value!!
+        assertEquals(RunState.Ready, snap.state)
+        assertTrue(snap.flow.needsAmount && snap.flow.amountLater)
+        UssdSession.clear()
+    }
 }

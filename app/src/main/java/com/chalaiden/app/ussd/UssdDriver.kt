@@ -190,7 +190,7 @@ object UssdDriver {
                     }
                 } else if (UssdSession.isActive && now - lastSeenAt > lostAfterMillis()) {
                     trace("lost")
-                    UssdSession.onSessionLost()
+                    UssdSession.onDialogGone()
                 }
                 UssdSession.checkStall(now).let { if (it != Action.None) execute(it, gen = gen) }
                 delay(ui.pollMillis)
@@ -222,7 +222,9 @@ object UssdDriver {
                     UssdSession.onReplyUndelivered()
                 }
             }
-            Action.Cancel -> close(ui, seen ?: ui.look())
+            // Nothing on screen yet (cancelled while dialling): a Back would land on Chalaiden. The tail closes
+            // bKash's dialog if it comes up after all.
+            Action.Cancel -> (seen ?: ui.look())?.let { close(ui, it) }
             Action.Dismiss -> ui.press("button1") || ui.press("button2") || run { ui.back(); true }
             Action.None -> Unit
         }

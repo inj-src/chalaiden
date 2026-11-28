@@ -107,6 +107,29 @@ object UssdSession {
         action?.takeIf { it != Action.None }?.let { performer?.invoke(it) }
     }
 
+    /**
+     * The amount, typed on the run screen while the menu was walked ([UssdFlow.amountLater]). bKash gets it
+     * as soon as it asks (or at once if it already has); the PIN screen comes next.
+     */
+    @Synchronized fun supplyAmount(amount: String) {
+        val flow = staged?.takeIf { it.needsAmount && !confirmed } ?: return
+        staged = flow.withAmount(amount)
+        val action = engine?.supplyAmount(amount)
+        publish()
+        action?.takeIf { it != Action.None }?.let { performer?.invoke(it) }
+    }
+
+    /**
+     * Back (or Cancel) on the PIN screen of a run that took its amount on the run screen: back to typing it.
+     * bKash already has the old amount, so its menu is closed; nothing was sent. The first PIN digit dials again.
+     */
+    @Synchronized fun editAmount(now: Long = System.currentTimeMillis()) {
+        val flow = staged?.takeIf { it.amountLater && !it.needsAmount && !confirmed } ?: return
+        coolDown(now)
+        staged = flow.withAmount(null)
+        publish()
+    }
+
     /** "Hold to pay" again after bKash showed a fee: send the PIN entered earlier. */
     @Synchronized fun confirmFee() {
         val action = engine?.confirmFee() ?: return
@@ -152,9 +175,13 @@ object UssdSession {
     /** Called on every poll by the driver. Ends a session that stopped moving; returns what to do with the dialog. */
     @Synchronized fun checkStall(now: Long = System.currentTimeMillis()): Action {
         val e = engine ?: return Action.None
-        val waiting = e.state as? RunState.AwaitingPin
-        if (!confirmed && waiting != null && now - waiting.sinceMillis > WARM_EXPIRY_MILLIS) {
-            // Warm, but the user is still on the PIN screen: close it before bKash does.
+        val since = when (val st = e.state) {
+            is RunState.AwaitingPin -> st.sinceMillis
+            is RunState.AwaitingAmount -> st.sinceMillis
+            else -> null
+        }
+        if (!confirmed && since != null && now - since > WARM_EXPIRY_MILLIS) {
+            // Warm, but the user is still typing the amount or the PIN: close it before bKash does.
             val action = e.cancel()
             engine = null
             endedAt = now
@@ -178,6 +205,23 @@ object UssdSession {
         publish()
     }
 
+    /**
+     * The driver saw bKash's dialog go without a word. On the amount step that is the user's back gesture:
+     * the dialog has the focus, so back closed it rather than this screen. Leave as back would have.
+     */
+    @Synchronized fun onDialogGone(now: Long = System.currentTimeMillis()) {
+        if (!confirmed && staged?.needsAmount == true && engine?.state.let { it is RunState.Working || it is RunState.AwaitingAmount }) {
+            // Ended without a Cancel: there is no dialog left to close, and a Back would land on Chalaiden.
+            engine?.onSessionLost()
+            endedAt = now
+            engine = null
+            staged = null
+            _current.value = null
+            return
+        }
+        onSessionLost(now)
+    }
+
     @Synchronized fun onSessionLost(now: Long = System.currentTimeMillis()) {
         val before = engine?.state
         engine?.onSessionLost()
@@ -186,13 +230,14 @@ object UssdSession {
     }
 
     /**
-     * bKash dropped a warm session at its PIN step before the user confirmed (they were slow to
-     * type). Nothing was sent, so it is not a failure to show: go back to ready, and the next digit
+     * bKash dropped a warm session at its amount or PIN step before the user confirmed (they were slow
+     * to type). Nothing was sent, so it is not a failure to show: go back to ready, and the next PIN digit
      * or hold dials again. A failure while walking the menu (a wrong number, bKash down) is still shown.
      */
     private fun settle(before: RunState?, now: Long) {
         val e = engine ?: return
-        if (confirmed || before !is RunState.AwaitingPin || e.state !is RunState.Finished) return
+        val waiting = before is RunState.AwaitingPin || before is RunState.AwaitingAmount
+        if (confirmed || !waiting || e.state !is RunState.Finished) return
         engine = null
         endedAt = now
     }
