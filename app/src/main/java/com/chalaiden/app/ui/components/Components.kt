@@ -78,6 +78,14 @@ import androidx.compose.ui.layout.Layout
 import com.chalaiden.app.ui.theme.Type
 import com.chalaiden.app.ui.theme.tokens
 import kotlinx.coroutines.launch
+import android.view.HapticFeedbackConstants
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.ui.layout.layout
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.platform.LocalView
 
 /** Bangladeshi mobile number grouping used on merchant cards: 017 4560 6306. */
 val PhoneGroups = listOf(3, 4, 4)
@@ -85,7 +93,7 @@ val PhoneGroups = listOf(3, 4, 4)
 /**
  * A phone number on one rail: equal cells in 3-4-4 groups with a faint tick between groups
  * (a quiet nod to the boxed digits on merchant cards). Empty cells show a dot; with [cursor]
- * the next cell gets a marigold caret. [compact] drops the container for headers and summaries.
+ * the next cell gets a blinking caret. [compact] drops the container for headers and summaries.
  */
 @Composable
 fun NumberRail(
@@ -125,7 +133,7 @@ fun NumberRail(
                         Box(Modifier.width(cellWidth).height(cellHeight), contentAlignment = Alignment.Center) {
                             when {
                                 ch != null -> Text(ch.toString(), style = Type.digit.copy(fontSize = fontSize), color = t.ink, maxLines = 1, softWrap = false)
-                                caret -> Box(Modifier.width(2.dp).height(font * 0.85f).clip(RoundedCornerShape(1.dp)).background(t.accent))
+                                caret -> BlinkingCaret(font * 0.85f)
                                 else -> Box(Modifier.size(5.dp).clip(CircleShape).background(t.line))
                             }
                         }
@@ -290,6 +298,34 @@ private fun Key(label: String, modifier: Modifier, height: Dp, description: Stri
     }
 }
 
+/**
+ * The caret of a field typed on Chalaiden's own keypad, which has no text field to draw one: on for 500 ms,
+ * off for 500 ms, like Android's. It comes back solid whenever it is recomposed fresh, so key it on the
+ * text where it stays in place, and it holds still while the user types.
+ */
+@Composable
+fun BlinkingCaret(height: Dp, modifier: Modifier = Modifier, width: Dp = 2.dp) {
+    val t = tokens
+    val alpha by rememberInfiniteTransition(label = "caret").animateFloat(
+        initialValue = 1f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(keyframes {
+            durationMillis = 1000
+            1f at 0
+            1f at 499
+            0f at 500
+            0f at 1000
+        }),
+        label = "caret",
+    )
+    Box(
+        modifier.width(width).height(height)
+            .graphicsLayer { this.alpha = alpha }
+            .clip(RoundedCornerShape(width / 2)).background(t.accent),
+    )
+}
+
+/** PIN digits typed so far. The next empty dot has an accent ring, so it is clear where typing goes. */
 @Composable
 fun PinDots(filled: Int, length: Int, modifier: Modifier = Modifier) {
     val t = tokens
@@ -298,10 +334,11 @@ fun PinDots(filled: Int, length: Int, modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         repeat(length) { i ->
+            val ring by animateColorAsState(if (i <= filled) t.accent else t.line, tween(120), label = "ring")
             Box(
                 Modifier.size(16.dp).clip(CircleShape)
                     .background(if (i < filled) t.accent else Color.Transparent)
-                    .border(2.dp, if (i < filled) t.accent else t.line, CircleShape),
+                    .border(2.dp, ring, CircleShape),
             )
         }
     }
@@ -310,6 +347,10 @@ fun PinDots(filled: Int, length: Int, modifier: Modifier = Modifier) {
 /**
  * Press and hold to confirm a payment. A plain tap is too easy to make by accident
  * for something that moves money.
+ *
+ * The thumb covers the middle of the button, so the hold is also shown where the thumb isn't: a
+ * "Keep holding…" chip with its own progress bar floats above the button, and the phone ticks as the
+ * hold fills, with a firmer buzz once it is done.
  */
 @Composable
 fun HoldToConfirm(
@@ -324,6 +365,7 @@ fun HoldToConfirm(
 ) {
     val t = tokens
     val haptics = LocalHapticFeedback.current
+    val view = LocalView.current
     val progress = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     var done by remember { mutableStateOf(false) }
@@ -335,49 +377,90 @@ fun HoldToConfirm(
     val track by animateColorAsState(if (enabled) t.accent else t.raised, tween(180), label = "track")
     val ink by animateColorAsState(if (enabled) t.onAccent else t.inkSoft, tween(180), label = "ink")
     val sweep = lerp(t.accent, Color.Black, 0.28f)
-    Box(
+    val holding = progress.value > 0f && !done
+    val chip by animateFloatAsState(if (holding) 1f else 0f, tween(if (holding) 140 else 180, easing = PressEase), label = "chip")
+    Box(modifier.fillMaxWidth()) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .clip(RoundedCornerShape(50))
+                .background(track)
+                .semantics { contentDescription = "$label. Press and hold." }
+                .pointerInput(enabled) {
+                    if (!enabled) return@pointerInput
+                    awaitEachGesture {
+                        awaitFirstDown()
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        if (!done) onHoldStart()
+                        val job = scope.launch {
+                            // A light tick at each eighth of the hold: felt progress, under a thumb that hides it.
+                            var ticks = 0
+                            progress.animateTo(1f, tween(900, easing = LinearEasing)) {
+                                val now = (value * 8).toInt()
+                                if (now > ticks && now < 8) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                ticks = now
+                            }
+                            if (!done && enabledNow) {
+                                done = true
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                confirmedNow()
+                            }
+                        }
+                        // Also runs when the button is disabled mid-hold (e.g. a PIN digit deleted with a
+                        // second finger): that restarts this gesture, and the fill must stop with it.
+                        try {
+                            waitForUpOrCancellation()
+                        } finally {
+                            if (!done) {
+                                job.cancel()
+                                onHoldCancel()
+                                scope.launch { progress.animateTo(0f, tween(200)) }
+                            }
+                        }
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.align(Alignment.CenterStart).fillMaxHeight().fillMaxWidth(progress.value).background(sweep))
+            Text(label, style = Type.button, color = ink, textAlign = TextAlign.Center)
+        }
+        if (chip > 0f) HoldChip(progress = { progress.value }, appear = chip, Modifier.align(Alignment.TopCenter))
+    }
+}
+
+/**
+ * "Keep holding…" above the hold button, clear of the thumb. It takes no height (it hangs above its
+ * parent, over whatever is there) and no touches, so the screen doesn't move or block when it shows.
+ */
+@Composable
+private fun HoldChip(progress: () -> Float, appear: Float, modifier: Modifier = Modifier) {
+    val t = tokens
+    val gap = 12.dp
+    Column(
         modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .clip(RoundedCornerShape(50))
-            .background(track)
-            .semantics { contentDescription = "$label. Press and hold." }
-            .pointerInput(enabled) {
-                if (!enabled) return@pointerInput
-                awaitEachGesture {
-                    awaitFirstDown()
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    if (!done) onHoldStart()
-                    val job = scope.launch {
-                        progress.animateTo(1f, tween(900, easing = LinearEasing))
-                        if (!done && enabledNow) {
-                            done = true
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            confirmedNow()
-                        }
-                    }
-                    // Also runs when the button is disabled mid-hold (e.g. a PIN digit deleted with a
-                    // second finger): that restarts this gesture, and the fill must stop with it.
-                    try {
-                        waitForUpOrCancellation()
-                    } finally {
-                        if (!done) {
-                            job.cancel()
-                            onHoldCancel()
-                            scope.launch { progress.animateTo(0f, tween(200)) }
-                        }
-                    }
-                }
-            },
-        contentAlignment = Alignment.Center,
+            .layout { measurable, constraints ->
+                val chip = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+                layout(chip.width, 0) { chip.place(0, -chip.height - gap.roundToPx()) }
+            }
+            .graphicsLayer {
+                alpha = appear
+                translationY = (1f - appear) * 6.dp.toPx()
+                scaleX = 0.96f + 0.04f * appear
+                scaleY = 0.96f + 0.04f * appear
+            }
+            .clip(RoundedCornerShape(14.dp))
+            .background(t.ink)
+            .padding(start = 16.dp, end = 16.dp, top = 9.dp, bottom = 11.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(Modifier.align(Alignment.CenterStart).fillMaxHeight().fillMaxWidth(progress.value).background(sweep))
-        Text(
-            if (progress.value > 0f && !done) "Keep holding…" else label,
-            style = Type.button,
-            color = ink,
-            textAlign = TextAlign.Center,
-        )
+        Text("Keep holding…", style = Type.label.copy(fontWeight = FontWeight.Medium), color = t.bg, maxLines = 1)
+        Box(
+            Modifier.padding(top = 7.dp).width(120.dp).height(4.dp).clip(RoundedCornerShape(50))
+                .background(t.bg.copy(alpha = 0.25f)),
+        ) {
+            Box(Modifier.fillMaxHeight().fillMaxWidth(progress()).background(t.accent))
+        }
     }
 }
 

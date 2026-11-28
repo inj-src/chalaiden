@@ -1,5 +1,8 @@
 package com.chalaiden.app.ui
 
+import com.chalaiden.app.ui.components.BlinkingCaret
+import androidx.compose.runtime.key
+import androidx.compose.ui.platform.LocalDensity
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -207,13 +210,24 @@ fun AmountScreen(kind: FlowKind, number: String, groups: List<Int>?, onPay: (amo
             Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Bottom) {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 val shown = if (amount.isEmpty()) "0" else "%,d".format(value)
+                val amountSize = (if (shown.length > 6) 64.sp else 76.sp).capScale()
+                // The keypad types here, so it gets a caret like any field: before the grey 0 while empty
+                // (the 0 is a hint, not a digit), after the figures once typing starts.
+                val caretHeight = with(LocalDensity.current) { amountSize.toDp() } * 0.72f
+                val caret = @Composable {
+                    key(amount) {
+                        BlinkingCaret(caretHeight, Modifier.padding(horizontal = 4.dp).padding(bottom = caretHeight * 0.2f), width = 3.dp)
+                    }
+                }
                 Row(verticalAlignment = Alignment.Bottom) {
+                    if (amount.isEmpty()) caret()
                     Text(
                         shown,
-                        style = Type.amount.copy(fontSize = (if (shown.length > 6) 64.sp else 76.sp).capScale(), letterSpacing = (-2).sp),
+                        style = Type.amount.copy(fontSize = amountSize, letterSpacing = (-2).sp),
                         color = if (amount.isEmpty()) t.line else t.ink,
                         maxLines = 1,
                     )
+                    if (amount.isNotEmpty()) caret()
                     Text("TK", style = Type.title.copy(fontSize = 26.sp.capScale()), color = t.inkSoft,
                         modifier = Modifier.padding(start = 10.dp, bottom = 16.dp))
                 }
