@@ -131,8 +131,18 @@ fun HomeScreen(
     Box(Modifier.fillMaxSize().background(t.bg).systemBarsPadding()) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
             Column {
-                Box(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 20.dp)) {
-                    HomeMenu(onSetup, onAbout, onUpdates, updateAvailable, Modifier.align(Alignment.CenterEnd).offset(x = 12.dp))
+                // The logo sits up here beside the menu rather than in the hero, so the hero starts higher.
+                Row(
+                    Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 20.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    Image(
+                        painterResource(R.drawable.logo_mark),
+                        contentDescription = "Chalaiden",
+                        modifier = Modifier.height(28.dp).aspectRatio(42f / 36f).semantics { heading() },
+                    )
+                    HomeMenu(onSetup, onAbout, onUpdates, updateAvailable, Modifier.offset(x = 12.dp))
                 }
                 // The brand comes in more than one design; a swipe left or right changes it. Edge to edge, so a
                 // design slides off the screen rather than into the margin.
@@ -261,12 +271,6 @@ private fun ChatDesign(active: Boolean) {
         reply.animateTo(1f, Bounce)
     }
     Column(Modifier.fillMaxWidth()) {
-        Image(
-            painterResource(R.drawable.logo_mark),
-            contentDescription = "Chalaiden",
-            modifier = Modifier.height(40.dp).aspectRatio(42f / 36f).semantics { heading() },
-        )
-        Spacer(Modifier.height(20.dp))
         // Every bubble is laid out from the start, so nothing shifts as they arrive.
         Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) { }, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Asked("bKash e taka pathabo, data nai, app o nai…", RoundedCornerShape(20.dp, 20.dp, 20.dp, 6.dp)) { first.value }
@@ -317,13 +321,7 @@ private fun BigTypeDesign(active: Boolean) {
         drop.animateTo(1f, spring(dampingRatio = 0.35f, stiffness = 380f))
     }
     Column(Modifier.fillMaxWidth()) {
-        Image(
-            painterResource(R.drawable.logo_mark),
-            contentDescription = null,
-            modifier = Modifier.height(40.dp).aspectRatio(42f / 36f),
-        )
-        Spacer(Modifier.height(16.dp))
-        // Part of the picture, like the logo: it fills the width at any text size.
+        // Part of the picture: it fills the width at any text size.
         FixedTextScale {
             BoxWithConstraints(Modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = "Chalaiden"; heading() }) {
                 val size = (maxWidth.value * 0.335f).sp

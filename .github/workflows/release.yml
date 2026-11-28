@@ -1,0 +1,66 @@
+# main only changes through a merged pull request from staging (a ruleset blocks direct pushes),
+# so every push here is a release: build the APK and publish it as a GitHub release. The app's
+# Updates check reads the latest release: its tag is the version, its .apk asset is the download.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the notes list the commits since the last release
+
+      - name: Read the version
+        id: version
+        run: |
+          version=$(sed -nE 's/^\s*versionName = "([^"]+)".*/\1/p' app/build.gradle.kts)
+          test -n "$version" || { echo "::error::No versionName in app/build.gradle.kts"; exit 1; }
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "::error::v$version is already released. Raise versionName and versionCode in app/build.gradle.kts, then merge again."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Phones that installed a shared APK only take an update signed with the same key, so the build
+      # is signed with that key, kept as a secret. Without it the APK couldn't update anyone.
+      - name: Restore the signing key
+        env:
+          KEYSTORE: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+        run: |
+          test -n "$KEYSTORE" || { echo "::error::The SIGNING_KEYSTORE_B64 secret is missing."; exit 1; }
+          mkdir -p ~/.android
+          echo "$KEYSTORE" | base64 -d > ~/.android/debug.keystore
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build
+        run: ./gradlew --no-daemon :app:assembleDebug
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          apk="chalaiden-$VERSION.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$apk"
+          last=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+          # The newest 30 at most: the first release would otherwise list the project's whole history.
+          git log --no-merges --format='- %s' ${last:+$last..}HEAD | head -n 30 > notes.md
+          gh release create "v$VERSION" "$apk" --title "Chalaiden $VERSION" --notes-file notes.md --target "$GITHUB_SHA"
