@@ -5,6 +5,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -81,6 +84,21 @@ object PinEntry {
     fun reset() { pin = "" }
 }
 
+/** The amount typed on the run screen ([UssdFlow.amountLater]), shared the same way as [PinEntry]. */
+object AmountEntry {
+    var amount by mutableStateOf("")
+    fun reset() { amount = "" }
+}
+
+/**
+ * Leaves the PIN screen without paying: back to the amount when it was typed on the run screen (bKash's
+ * menu closes; it has the old amount), else off the run screen altogether.
+ */
+fun leavePin(flow: UssdFlow) {
+    PinEntry.reset()
+    if (flow.amountLater) UssdSession.editAmount() else UssdSession.abandon()
+}
+
 /**
  * The run screen: PIN entry first, then progress while Chalaiden walks bKash's menu, then bKash's
  * answer. Drawn by the activity and by the cover ([RunCover]) above the phone's USSD dialogs.
@@ -95,6 +113,38 @@ fun RunOverlay() {
         Box(Modifier.fillMaxSize().background(t.bg).systemBarsPadding()) { Waiting("Closing the bKash menu…") }
         return
     }
+    // Typing the amount while bKash's menu is walked underneath: a screen of its own, as it is when the
+    // amount comes first; it gives way to the PIN as a screen push would.
+    AnimatedContent(
+        targetState = s.flow.needsAmount && !s.confirmed,
+        transitionSpec = {
+            val dir = if (targetState) -1 else 1
+            val ease = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+            (slideInHorizontally(tween(300, easing = ease)) { dir * it / 7 } + fadeIn(tween(200, delayMillis = 50)))
+                .togetherWith(slideOutHorizontally(tween(300, easing = ease)) { -dir * it / 12 } + fadeOut(tween(120)))
+        },
+        label = "amount",
+    ) { typing ->
+        if (typing) {
+            val recipient = s.flow.recipient.orEmpty()
+            AmountScreen(
+                kind = s.flow.kind,
+                number = recipient,
+                groups = s.flow.groups,
+                amount = AmountEntry.amount,
+                onAmount = { AmountEntry.amount = it },
+                onPay = UssdSession::supplyAmount,
+                onBack = UssdSession::abandon,
+            )
+        } else {
+            RunBody(s)
+        }
+    }
+}
+
+@Composable
+private fun RunBody(s: UssdSession.Snapshot) {
+    val t = tokens
     val phase = when {
         !s.confirmed -> Phase.Pin
         s.state is RunState.Working -> Phase.Progress
@@ -247,10 +297,7 @@ private fun PinStep(flow: UssdFlow) {
                 onHoldStart = UssdSession::warmUp,
             ) { send() }
         }
-        TextAction("Cancel", Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp)) {
-            PinEntry.reset()
-            UssdSession.abandon()
-        }
+        TextAction("Cancel", Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp)) { leavePin(flow) }
     }
 }
 

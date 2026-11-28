@@ -103,10 +103,6 @@ object AppIcons {
         moveTo(4.5f, 20f); curveTo(5.5f, 15.5f, 18.5f, 15.5f, 19.5f, 20f)
     }
 
-    val Paste = stroke("paste") {
-        moveTo(8f, 5f); lineTo(5.5f, 5f); lineTo(5.5f, 20.5f); lineTo(18.5f, 20.5f); lineTo(18.5f, 5f); lineTo(16f, 5f)
-        moveTo(9f, 3.5f); lineTo(15f, 3.5f); lineTo(15f, 6.5f); lineTo(9f, 6.5f); close()
-    }
 
     /** A padlock: where the PIN goes. */
     val Lock = svg(

@@ -64,6 +64,9 @@ import com.chalaiden.app.ui.NumberScreen
 import com.chalaiden.app.ui.ResultScreen
 import com.chalaiden.app.ui.RunCover
 import com.chalaiden.app.ui.PinEntry
+import com.chalaiden.app.ui.AmountEntry
+import com.chalaiden.app.ui.leavePin
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.chalaiden.app.ui.RunOverlay
 import com.chalaiden.app.ui.theme.tokens
 import com.chalaiden.app.ui.ScanScreen
@@ -104,7 +107,7 @@ private sealed interface Screen {
     data class Scan(val kind: FlowKind) : Screen
     /** [groups]: how the scanned card spaced the digits, so the rail can match it; null for the usual 3-4-4. */
     data class Number(val kind: FlowKind, val number: String, val crop: Bitmap?, val groups: List<Int>? = null) : Screen
-    data class Amount(val kind: FlowKind, val number: String, val groups: List<Int>? = null) : Screen
+    data class Amount(val kind: FlowKind, val number: String, val groups: List<Int>? = null, val reference: String = "") : Screen
     data object Running : Screen
     data class Result(val flow: UssdFlow, val outcome: Outcome, val wave: Boolean = false) : Screen
     /** [fromStart]: opened from the menu, so the steps run again from the first rather than jumping to what's missing. */
@@ -316,6 +319,9 @@ class MainActivity : FragmentActivity() {
             debugMode = intent.getStringExtra("mode")?.takeIf { it == "shizuku" || it == "guided" }
             checkSetup()
         }
+        // Debug builds only: dial from the number screen even with One Tap on, to try that path on a phone that has it.
+        //   adb shell am start -n com.chalaiden.app/.MainActivity --ez early_dial true
+        if (BuildConfig.DEBUG && intent?.hasExtra("early_dial") == true) debugEarly = intent.getBooleanExtra("early_dial", false)
         if (BuildConfig.DEBUG && intent?.hasExtra("shizuku_status") == true) {
             debugShizuku = ShizukuAccess.Status.entries.firstOrNull { it.name == intent.getStringExtra("shizuku_status") }
         }
@@ -469,9 +475,36 @@ class MainActivity : FragmentActivity() {
         runCatching { startActivity(Dialer.callIntent(this, simId())) }.onFailure { GuideSession.end(GuideSession.End.Closed) }
     }
 
-    /** Shows the PIN screen. Nothing is dialled until "Hold to pay" is pressed (see [drive]). */
+    /**
+     * After the number (and reference): with automatic answering, bKash's menu opens now and is walked to
+     * its amount prompt while the amount is typed, on the run screen ([UssdFlow.amountLater]). Guided mode
+     * can't, and neither can One Tap: its fingerprint sheet opens only while nothing of bKash's is up, so
+     * there the amount comes first, as before. [flow] has no amount yet.
+     */
+    private fun toAmount(flow: UssdFlow) {
+        val oneTap = OneTap.saved.value && !OneTap.suspect.value && !debugEarly
+        if (phoneReady() && backend() != null && !oneTap) return dialEarly(flow)
+        val number = flow.recipient ?: return
+        push(Screen.Amount(flow.kind, number, flow.groups, flow.reference?.takeUnless(Flows::isDefaultReference).orEmpty()))
+    }
+
+    /** Debug builds only: see `early_dial` in [handle]. */
+    private var debugEarly = false
+
+    private fun dialEarly(flow: UssdFlow) {
+        run(flow)
+        val id = runId
+        lifecycleScope.launch {
+            // Dialled once the cover is up over the screen sliding in, so bKash's dialog never shows.
+            withTimeoutOrNull(1_000) { RunCover.onScreen.first { it } }
+            if (id == runId) UssdSession.warmUp()
+        }
+    }
+
+    /** Shows the PIN screen (or, for [UssdFlow.amountLater], the amount first). Nothing is dialled until "Hold to pay" is pressed (see [drive]). */
     private fun run(flow: UssdFlow) {
         PinEntry.reset()
+        AmountEntry.reset()
         runId++
         askedFor = null
         prompt?.cancel()
@@ -504,7 +537,7 @@ class MainActivity : FragmentActivity() {
         val run = runId
         val ready = {
             run == runId && stack.lastOrNull() == Screen.Running && PinEntry.pin.isEmpty() &&
-                UssdSession.current.value?.let { it.flow == flow && !it.confirmed && it.state == RunState.Ready } == true
+                UssdSession.current.value?.let { it.flow == flow && !it.flow.needsAmount && !it.confirmed && it.state == RunState.Ready } == true
         }
         if (!ready()) return
         OneTap.prompting.value = true // the cover starts going; it only stays down while nothing is dialled
@@ -648,8 +681,8 @@ class MainActivity : FragmentActivity() {
         BackHandler(enabled = stack.size > 1 && stack.last() != Screen.Running) { pop() }
         // On the PIN screen, back leaves it (closing a warm menu); once paying, back does nothing.
         BackHandler(enabled = stack.lastOrNull() == Screen.Running && session?.confirmed == false) {
-            PinEntry.reset()
-            UssdSession.abandon()
+            val s = session ?: return@BackHandler
+            if (s.flow.needsAmount) UssdSession.abandon() else leavePin(s.flow)
         }
 
         // Screens keep their state (typed amount, number) while they are in the stack, so coming back
@@ -748,25 +781,38 @@ class MainActivity : FragmentActivity() {
                 crop = screen.crop,
                 groups = screen.groups,
                 onScan = { push(Screen.Scan(screen.kind)) },
-                onContinue = { push(Screen.Amount(screen.kind, it, screen.groups)) },
+                onContinue = { number, reference ->
+                    toAmount(
+                        when (screen.kind) {
+                            FlowKind.Payment -> Flows.payment(number, null, reference)
+                            FlowKind.SendMoney -> Flows.sendMoney(number, null, reference)
+                            else -> Flows.cashOut(number, null)
+                        }.copy(groups = screen.groups),
+                    )
+                },
                 onBack = ::pop,
             )
-            is Screen.Amount -> AmountScreen(
+            is Screen.Amount -> {
+              var amount by rememberSaveable { mutableStateOf("") }
+              AmountScreen(
                 kind = screen.kind,
                 number = screen.number,
                 groups = screen.groups,
-                onPay = { amount, reference ->
+                amount = amount,
+                onAmount = { amount = it },
+                onPay = { amount ->
                     start(
                         when (screen.kind) {
-                            FlowKind.Payment -> Flows.payment(screen.number, amount, reference)
-                            FlowKind.SendMoney -> Flows.sendMoney(screen.number, amount, reference)
+                            FlowKind.Payment -> Flows.payment(screen.number, amount, screen.reference)
+                            FlowKind.SendMoney -> Flows.sendMoney(screen.number, amount, screen.reference)
                             FlowKind.CashOut -> Flows.cashOut(screen.number, amount)
                             FlowKind.Balance -> Flows.balance()
                         }.copy(groups = screen.groups),
                     )
                 },
                 onBack = ::pop,
-            )
+              )
+            }
             // The same screen the cover shows over the phone's dialogs; seen here if the cover can't be drawn.
             Screen.Running -> RunOverlay()
             is Screen.Result -> {
@@ -789,7 +835,8 @@ class MainActivity : FragmentActivity() {
               ResultScreen(
                 flow = screen.flow,
                 outcome = screen.outcome,
-                onRetry = { pop(); start(screen.flow) },
+                // A run that failed before its amount was typed starts again from the amount.
+                onRetry = { pop(); if (screen.flow.needsAmount) toAmount(screen.flow) else start(screen.flow) },
                 onCheckBalance = { home(); start(Flows.balance()) },
                 onDone = ::home,
                 wave = screen.wave,

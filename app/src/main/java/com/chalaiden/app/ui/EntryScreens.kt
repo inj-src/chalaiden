@@ -14,6 +14,12 @@ import androidx.compose.ui.platform.LocalTextToolbar
 import android.widget.Toast
 import com.chalaiden.app.ui.components.BlinkingCaret
 import androidx.compose.runtime.key
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.ui.platform.LocalDensity
 import android.content.ClipboardManager
 import android.content.Context
@@ -88,12 +94,17 @@ fun NumberScreen(
     crop: Bitmap?,
     groups: List<Int>?,
     onScan: (() -> Unit)?,
-    onContinue: (String) -> Unit,
+    onContinue: (number: String, reference: String) -> Unit,
     onBack: () -> Unit,
 ) {
     val t = tokens
     val context = LocalContext.current
     var number by rememberSaveable { mutableStateOf(initial.filter(Char::isDigit).take(11)) }
+    // Asked here, not with the amount: bKash's menu is walked from this screen's Continue, and the
+    // reference is one of its steps. bKash's cash out menu has none.
+    val takesReference = kind == FlowKind.Payment || kind == FlowKind.SendMoney
+    var reference by rememberSaveable { mutableStateOf("") }
+    var showReference by rememberSaveable { mutableStateOf(false) }
     val contact = rememberLauncherForActivityResult(PickPhone()) { picked ->
         picked?.let { phoneFromContactUri(context, Uri.parse(it)) }
             ?.let { NumberExtractor.find(it).firstOrNull() }
@@ -101,7 +112,7 @@ fun NumberScreen(
     }
     val valid = NumberExtractor.isValid(number)
 
-    Column(Modifier.fillMaxSize().background(t.bg).systemBarsPadding()) {
+    Column(Modifier.fillMaxSize().background(t.bg).systemBarsPadding().imePadding()) {
         TopBar(
             when (kind) {
                 FlowKind.Payment -> "Shop's bKash number"
@@ -177,23 +188,65 @@ fun NumberScreen(
                     if (onScan != null) Chip(AppIcons.Scan, "Scan") { onScan() }
                 }
             }
-            Keypad(
-                onKey = { if (number.length < 11) number += it },
-                onBackspace = { number = number.dropLast(1) },
-                modifier = Modifier.weight(1f).padding(top = 12.dp),
-            )
+            if (takesReference && !showReference) {
+                Text(
+                    "Add reference", style = Type.button, color = t.accent,
+                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp).heightIn(min = 48.dp)
+                        .clip(RoundedCornerShape(10.dp)).clickable(role = Role.Button) { showReference = true }
+                        .padding(horizontal = 12.dp, vertical = 13.dp),
+                )
+            }
+            if (takesReference && showReference) {
+                val focus = remember { FocusRequester() }
+                // Opened by the chip: straight into typing. Coming back to the screen leaves it be.
+                var opened by rememberSaveable { mutableStateOf(false) }
+                LaunchedEffect(Unit) { if (!opened) { opened = true; focus.requestFocus() } }
+                BasicTextField(
+                    value = reference,
+                    onValueChange = { reference = Flows.cleanReference(it) },
+                    singleLine = true,
+                    textStyle = Type.body.copy(color = t.ink),
+                    cursorBrush = SolidColor(t.accent),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp).focusRequester(focus)
+                        .clip(RoundedCornerShape(16.dp)).background(t.surface).padding(16.dp),
+                    decorationBox = { inner ->
+                        if (reference.isEmpty()) Text("Reference, e.g. table 4", style = Type.body, color = t.inkSoft)
+                        inner()
+                    },
+                )
+            }
+            // While the phone's keyboard types the reference it covers the keypad anyway; the room goes to it.
+            @OptIn(ExperimentalLayoutApi::class)
+            if (WindowInsets.isImeVisible) {
+                Spacer(Modifier.weight(1f))
+            } else {
+                Keypad(
+                    onKey = { if (number.length < 11) number += it },
+                    onBackspace = { number = number.dropLast(1) },
+                    modifier = Modifier.weight(1f).padding(top = 12.dp),
+                )
+            }
         }
-        PrimaryButton("Continue", enabled = valid, modifier = Modifier.padding(20.dp)) { onContinue(number) }
+        PrimaryButton("Continue", enabled = valid, modifier = Modifier.padding(20.dp)) { onContinue(number, reference.trim()) }
     }
 }
 
-/** Amount plus an optional reference. Starts the bKash session on continue. */
+/**
+ * The amount. [amount] is held by the caller: on the run screen the activity and the cover both draw this,
+ * and digits typed as the cover takes over must carry across (see [AmountEntry]).
+ */
 @Composable
-fun AmountScreen(kind: FlowKind, number: String, groups: List<Int>?, onPay: (amount: String, reference: String) -> Unit, onBack: () -> Unit) {
+fun AmountScreen(
+    kind: FlowKind,
+    number: String,
+    groups: List<Int>?,
+    amount: String,
+    onAmount: (String) -> Unit,
+    onPay: (amount: String) -> Unit,
+    onBack: () -> Unit,
+) {
     val t = tokens
-    var amount by rememberSaveable { mutableStateOf("") }
-    var reference by rememberSaveable { mutableStateOf("") }
-    var showReference by rememberSaveable { mutableStateOf(false) }
     val value = amount.toLongOrNull() ?: 0
     val verb = when (kind) {
         FlowKind.Payment -> "Pay"
@@ -201,7 +254,7 @@ fun AmountScreen(kind: FlowKind, number: String, groups: List<Int>?, onPay: (amo
         else -> "Send"
     }
 
-    Column(Modifier.fillMaxSize().background(t.bg).systemBarsPadding().imePadding()) {
+    Column(Modifier.fillMaxSize().background(t.bg).systemBarsPadding()) {
         TopBar(
             when (kind) {
                 FlowKind.Payment -> "Pay shop"
@@ -267,33 +320,10 @@ fun AmountScreen(kind: FlowKind, number: String, groups: List<Int>?, onPay: (amo
                     Text("TK", style = Type.title.copy(fontSize = 26.sp.capScale()), color = t.inkSoft,
                         modifier = Modifier.padding(start = 10.dp, bottom = 16.dp))
                 }
-                Spacer(Modifier.height(6.dp))
-                // bKash's cash out menu has no reference step.
-                if (kind == FlowKind.CashOut) {
-                    Unit
-                } else if (showReference) {
-                    BasicTextField(
-                        value = reference,
-                        onValueChange = { reference = Flows.cleanReference(it) },
-                        singleLine = true,
-                        textStyle = Type.body.copy(color = t.ink),
-                        cursorBrush = SolidColor(t.accent),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(t.surface)
-                            .padding(16.dp),
-                        decorationBox = { inner ->
-                            if (reference.isEmpty()) Text("Reference, e.g. table 4", style = Type.body, color = t.inkSoft)
-                            inner()
-                        },
-                    )
-                } else {
-                    Text("Add reference", style = Type.button, color = t.ink,
-                        modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { showReference = true }.padding(vertical = 10.dp))
-                }
             }
             Keypad(
-                onKey = { if (amount.length < 6 && !(amount.isEmpty() && it == '0')) amount += it },
-                onBackspace = { amount = amount.dropLast(1) },
+                onKey = { if (amount.length < 6 && !(amount.isEmpty() && it == '0')) onAmount(amount + it) },
+                onBackspace = { onAmount(amount.dropLast(1)) },
                 modifier = Modifier.weight(1f, fill = false).padding(top = 28.dp),
             )
             }
@@ -302,7 +332,7 @@ fun AmountScreen(kind: FlowKind, number: String, groups: List<Int>?, onPay: (amo
             if (value > 0) "$verb ${"%,d".format(value)} TK" else verb,
             enabled = value > 0,
             modifier = Modifier.padding(20.dp),
-        ) { onPay(amount, reference.trim()) }
+        ) { onPay(amount) }
     }
 }
 
