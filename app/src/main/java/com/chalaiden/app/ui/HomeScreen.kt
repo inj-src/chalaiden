@@ -117,6 +117,7 @@ fun HomeScreen(
     onCashOut: () -> Unit,
     onBalance: () -> Unit,
     onSetup: () -> Unit,
+    onOneTap: () -> Unit = {},
     onAbout: () -> Unit = {},
     onUpdates: () -> Unit = {},
     /** A newer version is on GitHub: Updates in the menu gets a dot. */
@@ -147,7 +148,7 @@ fun HomeScreen(
                         modifier = Modifier.padding(start = 6.dp).height(28.dp).aspectRatio(42f / 36f).semantics { heading() },
                     )
                     Spacer(Modifier.weight(1f))
-                    HomeMenu(onSetup, onAbout, onUpdates, updateAvailable, Modifier.offset(x = 12.dp))
+                    HomeMenu(onSetup, onOneTap, onAbout, onUpdates, updateAvailable, Modifier.offset(x = 12.dp))
                 }
                 // The brand comes in more than one design; a swipe left or right changes it. Edge to edge, so a
                 // design slides off the screen rather than into the margin.
@@ -504,7 +505,7 @@ private fun simName(sim: Sim) = listOfNotNull("SIM ${sim.slot + 1}", carrierOf(s
 
 /** The ⋮ button in Home's top-right corner and its menu: Setup (always one tap away from here), Updates and About. */
 @Composable
-private fun HomeMenu(onSetup: () -> Unit, onAbout: () -> Unit, onUpdates: () -> Unit, updateAvailable: Boolean, modifier: Modifier = Modifier) {
+private fun HomeMenu(onSetup: () -> Unit, onOneTap: () -> Unit, onAbout: () -> Unit, onUpdates: () -> Unit, updateAvailable: Boolean, modifier: Modifier = Modifier) {
     val t = tokens
     var open by remember { mutableStateOf(false) }
     Box(modifier) {
@@ -526,6 +527,11 @@ private fun HomeMenu(onSetup: () -> Unit, onAbout: () -> Unit, onUpdates: () -> 
             DropdownMenuItem(
                 text = { Text("Change method", style = Type.body, color = t.ink) },
                 onClick = { open = false; onSetup() },
+                modifier = Modifier.widthIn(min = 220.dp).heightIn(min = 48.dp),
+            )
+            DropdownMenuItem(
+                text = { Text("One Tap", style = Type.body, color = t.ink) },
+                onClick = { open = false; onOneTap() },
                 modifier = Modifier.widthIn(min = 220.dp).heightIn(min = 48.dp),
             )
             DropdownMenuItem(

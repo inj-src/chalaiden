@@ -64,7 +64,7 @@ fun AboutScreen(onBack: () -> Unit) {
             )
             Spacer(Modifier.height(24.dp))
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Fact(AppIcons.Lock, "Your PIN goes only to bKash. Chalaiden never saves it.")
+                Fact(AppIcons.Lock, "Your PIN goes only to bKash. Chalaiden saves it only if you turn on One Tap, and then locked to your fingerprint.")
                 Fact(AppIcons.Scan, "A shop's number is read from its card on your phone. Nothing is uploaded.")
                 Fact(AppIcons.Alert, "Chalaiden isn't made by bKash or connected to it.")
             }
