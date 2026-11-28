@@ -76,6 +76,10 @@ object RunCover {
     /** The cover's window is on screen (fading counts). The fingerprint sheet waits for it to go. */
     private val _onScreen = MutableStateFlow(false)
     val onScreen: StateFlow<Boolean> = _onScreen.asStateFlow()
+
+    /** Up and staying up (not fading out): what may be dialled under. */
+    private val _covering = MutableStateFlow(false)
+    val covering: StateFlow<Boolean> = _covering.asStateFlow()
     private var removal: Job? = null
     private const val FADE_MILLIS = 220
 
@@ -89,9 +93,11 @@ object RunCover {
             // Up for the session, and after it until the phone's last dialog has actually closed.
             // Down while One Tap's fingerprint sheet is up: this layer sits above it and would hide it. Only
             // before anything is dialled: once bKash's menu is up, the cover comes back whatever One Tap says.
-            combine(UssdSession.current, UssdDriver.dialogUp, OneTap.prompting) { snap, dialogUp, prompting ->
+            combine(UssdSession.current, UssdDriver.dialogUp, OneTap.prompting, StepReplay.shown) { snap, dialogUp, prompting, replayed ->
                 val sheet = prompting && snap?.state == RunState.Ready && !dialogUp
-                ((snap != null && snap.state !is RunState.Finished) || dialogUp) && !sheet
+                // A payment that went through stays covered until its step list has finished ticking off.
+                val live = snap != null && (snap.state !is RunState.Finished || !StepReplay.caughtUp(snap, replayed))
+                (live || dialogUp) && !sheet
             }
                 .distinctUntilChanged()
                 .collectLatest { running ->
@@ -111,7 +117,7 @@ object RunCover {
         removal?.cancel()
         removal = null
         shown.value = true
-        if (view != null) return
+        if (view != null) return run { _covering.value = true }
         // The Accessibility method's service hosts it as an accessibility overlay whenever it's running:
         // that layer is above every window the phone app can use. A plain overlay is not: HONOR's
         // MagicOS puts the USSD box that asks for input in a KEYGUARD_DIALOG window, which drew over a
@@ -177,12 +183,13 @@ object RunCover {
             }
         }
         runCatching { wm.addView(v, params) }
-            .onSuccess { view = v; owner = o; host = wm; _onScreen.value = true }
+            .onSuccess { view = v; owner = o; host = wm; _onScreen.value = true; _covering.value = true }
             .onFailure { o.stop() }
     }
 
     private fun hide(context: Context, scope: CoroutineScope) {
         shown.value = false
+        _covering.value = false
         removal?.cancel()
         removal = scope.launch {
             delay(FADE_MILLIS + 40L)

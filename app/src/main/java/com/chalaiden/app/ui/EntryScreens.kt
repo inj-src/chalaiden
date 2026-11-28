@@ -11,6 +11,8 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalTextToolbar
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalFocusManager
 import android.widget.Toast
 import com.chalaiden.app.ui.components.BlinkingCaret
 import androidx.compose.runtime.key
@@ -112,6 +114,9 @@ fun NumberScreen(
             ?.let { number = it }
     }
     val valid = NumberExtractor.isValid(number)
+    @OptIn(ExperimentalLayoutApi::class) val typing = WindowInsets.isImeVisible
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focus = LocalFocusManager.current
 
     Column(Modifier.fillMaxSize().background(t.bg).systemBarsPadding().imePadding()) {
         TopBar(
@@ -123,7 +128,8 @@ fun NumberScreen(
             onBack,
         )
         Column(Modifier.weight(1f).padding(horizontal = 20.dp)) {
-            if (crop != null) {
+            // The photo gives way while the keyboard is up, so the reference field keeps its room.
+            if (crop != null && !typing) {
                 Spacer(Modifier.height(8.dp))
                 Text("From the card", style = Type.label, color = t.inkSoft)
                 Spacer(Modifier.height(6.dp))
@@ -218,8 +224,7 @@ fun NumberScreen(
                 )
             }
             // While the phone's keyboard types the reference it covers the keypad anyway; the room goes to it.
-            @OptIn(ExperimentalLayoutApi::class)
-            if (WindowInsets.isImeVisible) {
+            if (typing) {
                 Spacer(Modifier.weight(1f))
             } else {
                 Keypad(
@@ -229,7 +234,12 @@ fun NumberScreen(
                 )
             }
         }
-        PrimaryButton("Continue", enabled = valid, modifier = Modifier.padding(20.dp)) { onContinue(number, reference.trim()) }
+        PrimaryButton("Continue", enabled = valid, modifier = Modifier.padding(20.dp)) {
+            // The keyboard goes with this screen, not over the next one's keypad.
+            focus.clearFocus()
+            keyboard?.hide()
+            onContinue(number, reference.trim())
+        }
     }
 }
 

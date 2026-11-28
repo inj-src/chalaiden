@@ -110,15 +110,21 @@ fun RunOverlay() {
     val snap by UssdSession.current.collectAsState()
     val t = tokens
     val s = snap
-    if (s == null || s.state is RunState.Finished) {
+    val shown by StepReplay.shown.collectAsState()
+    // A payment that went through still finishes ticking off its steps before this gives way.
+    if (s == null || (s.state is RunState.Finished && StepReplay.caughtUp(s, shown))) {
         // Between the end of a session and the phone's last dialog closing (or a trailing bKash prompt).
         Box(Modifier.fillMaxSize().background(t.bg).systemBarsPadding()) { Waiting("Closing the bKash menu…") }
         return
     }
     // Typing the amount while bKash's menu is walked underneath: a screen of its own, as it is when the
     // amount comes first; it gives way to the PIN as a screen push would.
+    val typing = s.flow.needsAmount && !s.confirmed
+    // The PIN screen sliding out after Back keeps the amount it showed, rather than snapping its header up.
+    val lastBody = remember { arrayOf(s) }
+    if (!typing) lastBody[0] = s
     AnimatedContent(
-        targetState = s.flow.needsAmount && !s.confirmed,
+        targetState = typing,
         transitionSpec = {
             val dir = if (targetState) -1 else 1
             val ease = CubicBezierEasing(0.2f, 0f, 0f, 1f)
@@ -138,7 +144,7 @@ fun RunOverlay() {
                 onBack = UssdSession::abandon,
             )
         } else {
-            RunBody(s)
+            RunBody(if (typing) lastBody[0] else s)
         }
     }
 }

@@ -96,7 +96,8 @@ object UssdSession {
 
     /** The hold completed: the PIN goes in as soon as bKash's summary matches (see [UssdEngine.presetPin]). */
     @Synchronized fun confirm(pin: String) {
-        if (staged == null || confirmed) return
+        // No PIN before the amount: bKash's summary has nothing yet to be checked against.
+        if (staged == null || staged!!.needsAmount || confirmed) return
         confirmed = true
         val action = engine?.presetPin(pin)
         if (engine == null) {
@@ -200,7 +201,15 @@ object UssdSession {
         return Action.Cancel
     }
 
-    @Synchronized fun onReplyUndelivered() {
+    @Synchronized fun onReplyUndelivered(now: Long = System.currentTimeMillis()) {
+        // The amount typed on the run screen found bKash's prompt gone: nothing was sent, and the user
+        // is still before the PIN. Stay, and let the first PIN digit dial again with that amount.
+        if (!confirmed && staged?.amountLater == true && engine != null) {
+            engine = null
+            endedAt = now
+            publish()
+            return
+        }
         engine?.onReplyUndelivered()
         publish()
     }

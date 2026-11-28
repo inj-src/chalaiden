@@ -501,15 +501,18 @@ class MainActivity : FragmentActivity() {
         val id = runId
         lifecycleScope.launch {
             // Dialled once the cover is up over the screen sliding in, so bKash's dialog never shows.
-            withTimeoutOrNull(1_000) { RunCover.onScreen.first { it } }
-            if (id == runId) UssdSession.warmUp()
+            // Not a cover still fading out from the last run: that one is gone before bKash's dialog is.
+            withTimeoutOrNull(1_000) { RunCover.covering.first { it } }
+            // Gone to the background meanwhile: the phone won't dial from there. The first PIN digit will.
+            if (id == runId && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) UssdSession.warmUp()
         }
     }
 
     /** Shows the PIN screen (or, for [UssdFlow.amountLater], the amount first). Nothing is dialled until "Hold to pay" is pressed (see [drive]). */
     private fun run(flow: UssdFlow) {
         PinEntry.reset()
-        AmountEntry.reset()
+        // A retry of a run whose amount was typed on the run screen keeps it, for Back from the PIN.
+        AmountEntry.amount.value = flow.amount.orEmpty()
         runId++
         askedFor = null
         prompt?.cancel()
@@ -635,13 +638,15 @@ class MainActivity : FragmentActivity() {
         // Root unless only Shizuku works; a backend that has gone since ends the session as not started.
         UssdDriver.start(this, flow, backend() ?: Backend.Root) {
             withContext(Dispatchers.Main) {
+                // Left while the driver got ready: nothing to dial for (the driver checks this too).
+                if (!UssdSession.isActive) return@withContext
                 runCatching {
                     startActivity(Dialer.callIntent(this@MainActivity, sim))
                 }.onFailure {
                     // The amount may have been typed since this started: retry with it.
                     val latest = UssdSession.current.value?.flow ?: flow
                     UssdSession.clear()
-                    replaceTop(Screen.Result(latest, Outcome.Failed("Couldn't dial *247#. Check your SIM and phone permissions, then try again.", pinSent = false, fromBkash = false)))
+                    if (stack.lastOrNull() == Screen.Running) replaceTop(Screen.Result(latest, Outcome.Failed("Couldn't dial *247#. Check your SIM and phone permissions, then try again.", pinSent = false, fromBkash = false)))
                 }
             }
         }

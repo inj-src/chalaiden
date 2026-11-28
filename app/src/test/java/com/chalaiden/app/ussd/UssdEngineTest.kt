@@ -443,4 +443,35 @@ class UssdEngineTest {
         assertTrue(snap.flow.needsAmount && snap.flow.amountLater)
         UssdSession.clear()
     }
+
+    /** No PIN can be held for a summary before there is an amount to check it against. */
+    @Test fun pinIsRefusedBeforeTheAmount() {
+        earlyToAmount()
+        UssdSession.confirm("12345")
+        assertTrue(!UssdSession.current.value!!.confirmed)
+        val e = UssdEngine(Flows.payment("01783007004", null, "test"))
+        assertEquals(Action.None, e.presetPin("12345"))
+        UssdSession.clear()
+    }
+
+    @Test fun amountReachesBkashThroughTheDriver() {
+        val sent = mutableListOf<Action>()
+        UssdSession.performer = { sent += it }
+        earlyToAmount()
+        UssdSession.supplyAmount("10")
+        assertEquals(listOf<Action>(Action.Reply("10", to = "Enter Amount:")), sent)
+        UssdSession.performer = null
+        UssdSession.clear()
+    }
+
+    /** bKash's amount prompt went just before Pay: nothing was sent, so stay before the PIN and redial later. */
+    @Test fun undeliveredAmountQuietlyRearms() {
+        earlyToAmount()
+        UssdSession.supplyAmount("10")
+        UssdSession.onReplyUndelivered()
+        val snap = UssdSession.current.value!!
+        assertEquals(RunState.Ready, snap.state)
+        assertEquals("10", snap.flow.amount)
+        UssdSession.clear()
+    }
 }

@@ -160,6 +160,7 @@ object UssdDriver {
 
             var lastSeenAt = System.currentTimeMillis() // the dial counts as the last sighting
             var lastTraced: Dialog? = null
+            var everSeen = false // nothing ever showed: the dial itself failed (no signal), not a closed dialog
             // Keep watching through the tail too, so a trailing "Do you want to continue?" is closed.
             while (isActive && current() && UssdSession.wantsDialogs) {
                 val now = System.currentTimeMillis()
@@ -182,6 +183,7 @@ object UssdDriver {
                 }
                 if (look != null) {
                     lastSeenAt = now
+                    everSeen = true
                     look.dialog?.let { dialog ->
                         val action = UssdSession.onDialog(dialog)
                         if (action != Action.None || dialog != lastTraced) {
@@ -192,7 +194,7 @@ object UssdDriver {
                     }
                 } else if (UssdSession.isActive && now - lastSeenAt > lostAfterMillis()) {
                     trace("lost")
-                    UssdSession.onDialogGone()
+                    if (everSeen) UssdSession.onDialogGone() else UssdSession.onSessionLost()
                 }
                 UssdSession.checkStall(now).let { if (it != Action.None) execute(it, gen = gen) }
                 delay(ui.pollMillis)

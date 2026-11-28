@@ -149,7 +149,7 @@ class UssdEngine(flow: UssdFlow, private val clock: () -> Long = System::current
      * same recipient and amount as the flow; a fee the user hasn't seen holds it back for a go-ahead.
      */
     fun presetPin(pin: String): Action {
-        if (state is RunState.Finished || state == RunState.Confirming) return Action.None
+        if (state is RunState.Finished || state == RunState.Confirming || flow.needsAmount) return Action.None
         this.pin = pin
         val s = state as? RunState.AwaitingPin ?: return Action.None
         if (s.feeToConfirm != null) return Action.None
@@ -241,8 +241,10 @@ class UssdEngine(flow: UssdFlow, private val clock: () -> Long = System::current
         flow.recipient?.let { want ->
             if (digits(details["to"]) != digits(want)) return mismatch(text)
         }
+        if (flow.needsAmount) return mismatch(text)
         flow.amount?.let { want ->
-            if (amountOf(details["amount"]) != amountOf(want)) return mismatch(text)
+            val wanted = amountOf(want) ?: return mismatch(text)
+            if (amountOf(details["amount"]) != wanted) return mismatch(text)
         }
         // A fee Chalaiden can't read is shown too, rather than taken as free.
         val fee = (details["fee"] ?: details["charge"])?.takeIf { amountOf(it).let { a -> a == null || a > 0.0 } }
