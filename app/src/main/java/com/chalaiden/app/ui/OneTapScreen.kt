@@ -250,14 +250,20 @@ private fun SavePin(onSaved: () -> Unit) {
                 modifier = if (problem != null) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier,
             )
         }
-        Spacer(Modifier.height(24.dp))
-        PinDots(pin.length, PIN_DIGITS, Modifier.align(Alignment.CenterHorizontally))
-        Keypad(
-            onKey = { if (pin.length < PIN_DIGITS) pin += it; problem = null },
-            onBackspace = { pin = pin.dropLast(1) },
-            modifier = if (compact) Modifier.padding(top = 16.dp) else Modifier.weight(1f).padding(top = 16.dp),
-            keyHeight = if (compact) 48.dp else null,
-        )
+        // The dots sit just above the keypad that fills them, the pair hugging the bottom, as the amount
+        // does on its screen; hung under the heading, they were a thumb's length from the keys.
+        Column(
+            if (compact) Modifier.padding(top = 24.dp) else Modifier.weight(1f).padding(top = 24.dp),
+            verticalArrangement = Arrangement.Bottom,
+        ) {
+            PinDots(pin.length, PIN_DIGITS, Modifier.align(Alignment.CenterHorizontally))
+            Keypad(
+                onKey = { if (pin.length < PIN_DIGITS) pin += it; problem = null },
+                onBackspace = { pin = pin.dropLast(1) },
+                modifier = if (compact) Modifier.padding(top = 16.dp) else Modifier.weight(1f, fill = false).padding(top = 28.dp),
+                keyHeight = if (compact) 48.dp else null,
+            )
+        }
         Spacer(Modifier.height(12.dp))
         PrimaryButton("Save PIN", enabled = pin.length == PIN_DIGITS && !asking, modifier = Modifier.padding(bottom = 12.dp)) { save() }
     }
