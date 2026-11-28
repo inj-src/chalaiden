@@ -42,6 +42,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.biometric.BiometricPrompt
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -99,19 +101,21 @@ fun OneTapScreen(guided: Boolean, change: Boolean, onBack: () -> Unit) {
         if (readiness == OneTap.Readiness.NoneEnrolled && OneTap.saved.value) OneTap.forget(context)
         if (readiness != OneTap.Readiness.Ready) entering = false // nothing to lock a new PIN with
     }
-    BackHandler(enabled = entering) { entering = false }
+    // Only Ready can lock a new PIN; anything else and there's no PIN pad to back out of.
+    val typing = entering && readiness == OneTap.Readiness.Ready
+    BackHandler(enabled = typing) { entering = false }
 
     Column(Modifier.fillMaxSize().background(t.bg).systemBarsPadding()) {
-        TopBar("One Tap", onBack = { if (entering) entering = false else onBack() })
+        TopBar("One Tap", onBack = { if (typing) entering = false else onBack() })
         when {
-            entering && readiness == OneTap.Readiness.Ready -> SavePin(onSaved = { entering = false })
+            typing -> SavePin(onSaved = { entering = false })
             readiness == OneTap.Readiness.NoneEnrolled -> Blocked(
                 "Add a fingerprint first",
                 "One Tap uses your phone's fingerprint lock. Add a fingerprint in Settings, then come back here.",
                 action = "Open Settings" to { openEnroll(context) },
             )
             // Still on when the sensor is out for now, so it can be turned off.
-            saved -> OnState(onChange = { entering = true }, onTurnOff = { OneTap.forget(context) }, guided = guided)
+            saved -> OnState(onChange = { if (readiness == OneTap.Readiness.Ready) entering = true }, changeable = readiness == OneTap.Readiness.Ready, onTurnOff = { OneTap.forget(context) }, guided = guided)
             readiness == OneTap.Readiness.Unavailable -> Blocked(
                 "One Tap can't work on this phone",
                 "It needs a fingerprint sensor that Android trusts for payments. You can keep typing your PIN.",
@@ -151,7 +155,7 @@ private fun Intro(guided: Boolean, onStart: () -> Unit) {
 }
 
 @Composable
-private fun OnState(onChange: () -> Unit, onTurnOff: () -> Unit, guided: Boolean) {
+private fun OnState(onChange: () -> Unit, changeable: Boolean, onTurnOff: () -> Unit, guided: Boolean) {
     val t = tokens
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp)) {
         Box(Modifier.size(88.dp).clip(CircleShape).background(t.accent.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
@@ -173,7 +177,7 @@ private fun OnState(onChange: () -> Unit, onTurnOff: () -> Unit, guided: Boolean
         }
         Spacer(Modifier.height(24.dp))
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(t.surface)) {
-            Choice("Change saved PIN", t.ink, chevron = true, onClick = onChange)
+            Choice("Change saved PIN", if (changeable) t.ink else t.inkSoft, chevron = changeable, enabled = changeable, onClick = onChange)
             HorizontalDivider(Modifier.padding(horizontal = 16.dp), thickness = 1.dp, color = t.line)
             Choice("Turn off and remove PIN", t.error, chevron = false, onClick = onTurnOff)
         }
@@ -185,6 +189,12 @@ private fun OnState(onChange: () -> Unit, onTurnOff: () -> Unit, guided: Boolean
     }
 }
 
+/** [SavePin]'s fingerprint sheet, and whether the screen that asked has gone. */
+private class SaveRequest {
+    var prompt: BiometricPrompt? = null
+    var gone = false
+}
+
 /** The PIN pad, then the fingerprint that locks what was typed. */
 @Composable
 private fun SavePin(onSaved: () -> Unit) {
@@ -193,6 +203,16 @@ private fun SavePin(onSaved: () -> Unit) {
     var pin by remember { mutableStateOf("") }
     var problem by remember { mutableStateOf<String?>(null) }
     var asking by remember { mutableStateOf(false) }
+    // The sheet goes with this screen: leaving it (or the activity being recreated) cancels it, and an
+    // answer that still arrives saves nothing.
+    val request = remember { SaveRequest() }
+    DisposableEffect(Unit) {
+        onDispose {
+            request.gone = true
+            request.prompt?.cancelAuthentication()
+            request.prompt = null
+        }
+    }
     fun save() {
         val activity = context.fragmentActivity() ?: return
         val cipher = runCatching { OneTap.encrypter(context) }.getOrElse {
@@ -201,7 +221,9 @@ private fun SavePin(onSaved: () -> Unit) {
         }
         val entered = pin
         asking = true
-        activity.askFingerprint("Save your PIN", "Touch the sensor to lock it to your fingerprint", "Cancel", cipher, confirm = true) { touch ->
+        request.prompt = activity.askFingerprint("Save your PIN", "Touch the sensor to lock it to your fingerprint", "Cancel", cipher, confirm = true) { touch ->
+            request.prompt = null
+            if (request.gone) return@askFingerprint
             asking = false
             when (touch) {
                 is Touch.Unlocked -> runCatching { OneTap.store(context, touch.cipher, entered) }
@@ -278,10 +300,10 @@ private fun Fact(icon: ImageVector, text: String) {
 }
 
 @Composable
-private fun Choice(label: String, color: Color, chevron: Boolean, onClick: () -> Unit) {
+private fun Choice(label: String, color: Color, chevron: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
     val t = tokens
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button, onClick = onClick).padding(horizontal = 16.dp),
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(enabled = enabled, role = Role.Button, onClick = onClick).padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, style = Type.body, color = color, modifier = Modifier.weight(1f))

@@ -191,10 +191,10 @@ private fun PinStep(flow: UssdFlow) {
         val notice by OneTap.pinNotice.collectAsState()
         val suspect by OneTap.suspect.collectAsState()
         val cold = UssdSession.current.collectAsState().value?.state == RunState.Ready
-        // The notice and the pill or lock line keep one height between them, notice or not, so the keys
-        // never resize when one appears or clears on the first digit. With One Tap on, room for two lines.
+        // The pill and the lock line share one height, so the keys don't resize on the first digit; a
+        // notice comes only before typing (the sheet closed) and stays while typing, for the same reason.
         Column(
-            Modifier.fillMaxWidth().heightIn(min = if (oneTap) 84.dp else 48.dp),
+            Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
         ) {
         // Why the fingerprint didn't work, read out as it appears.
@@ -229,8 +229,8 @@ private fun PinStep(flow: UssdFlow) {
         }
         }
         Keypad(
+            // The notice stays while typing: clearing it would resize the keys on the first press.
             onKey = {
-                OneTap.pinNotice.value = null
                 if (PinEntry.pin.length < PIN_LENGTH) PinEntry.pin += it
                 UssdSession.warmUp()
             },
