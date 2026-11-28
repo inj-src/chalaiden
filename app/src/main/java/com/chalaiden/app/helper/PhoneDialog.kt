@@ -72,11 +72,11 @@ internal class PhoneDialog(
 
     private fun press(root: AccessibilityNodeInfo?, id: String): Boolean {
         root ?: return false
-        val full = "android:id/$id"
+        val ids = buttonIds(id)
         // vivo's OriginOS dialog answers the id lookup with nothing (V2445A, Android 15, 2026-11-12),
         // though its buttons carry the id; walking the tree finds them.
-        val button = root.findAccessibilityNodeInfosByViewId(full).firstOrNull { it.isClickable }
-            ?: flatten(root).firstOrNull { it.viewIdResourceName == full && it.isClickable }
+        val button = ids.firstNotNullOfOrNull { full -> root.findAccessibilityNodeInfosByViewId(full).firstOrNull { it.isClickable } }
+            ?: flatten(root).firstOrNull { it.viewIdResourceName in ids && it.isClickable }
             ?: return false
         return button.performAction(AccessibilityNodeInfo.ACTION_CLICK)
     }
@@ -123,5 +123,19 @@ internal class PhoneDialog(
     companion object {
         /** The app that hosts the USSD dialog on every phone checked so far (stock, OxygenOS, OriginOS). */
         const val PHONE = "com.android.phone"
+
+        /**
+         * The full ids the dialog button android:id/[id] may carry. Infinix's XOS draws its own USSD
+         * dialog, with Send and Cancel as `btn_positive` and `btn_negative` (X6812, Android 11,
+         * 2026-11-28); looking only for button1 and button2 left a session stuck at bKash's menu.
+         */
+        fun buttonIds(id: String): List<String> = listOfNotNull(
+            "android:id/$id",
+            when (id) {
+                "button1" -> "$PHONE:id/btn_positive"
+                "button2" -> "$PHONE:id/btn_negative"
+                else -> null
+            },
+        )
     }
 }

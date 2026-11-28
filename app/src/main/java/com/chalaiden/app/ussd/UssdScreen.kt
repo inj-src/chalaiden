@@ -213,13 +213,16 @@ internal class DumpScreen(private val sh: RootShell) : UssdScreen {
 
     /** TAB until the button has focus, then ENTER. */
     override fun press(id: String): Boolean {
+        // Any package's id with the button's name, as before; Infinix's names included.
+        val names = PhoneDialog.buttonIds(id).map { ":id/" + it.substringAfter(":id/") }
+        fun isButton(rid: String?) = rid != null && names.any(rid::endsWith)
         repeat(4) {
             val xml = sh.exec(DUMP)
             if (!xml.contains(PHONE)) return true // already gone
             val nodes = nodes(xml)
-            if (nodes.none { attr(it, "resource-id")?.endsWith(":id/$id") == true }) return false
+            if (nodes.none { isButton(attr(it, "resource-id")) }) return false
             val focused = nodes.firstOrNull { attr(it, "focused") == "true" }?.let { attr(it, "resource-id") }
-            if (focused?.endsWith(":id/$id") == true) {
+            if (isButton(focused)) {
                 sh.exec("input keyevent KEYCODE_ENTER")
                 return true
             }
