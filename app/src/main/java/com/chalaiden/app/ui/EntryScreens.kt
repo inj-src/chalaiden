@@ -211,8 +211,8 @@ fun AmountScreen(kind: FlowKind, number: String, groups: List<Int>?, onPay: (amo
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 val shown = if (amount.isEmpty()) "0" else "%,d".format(value)
                 val amountSize = (if (shown.length > 6) 64.sp else 76.sp).capScale()
-                // The keypad types here, so it gets a caret like any field: before the grey 0 while empty
-                // (the 0 is a hint, not a digit), after the figures once typing starts.
+                // The keypad types here, so it gets a caret like any field, always after the figures (the grey 0
+                // too, while empty).
                 // Measured on the amount face: figures stand 0.75 of the size tall, on a baseline 0.29 above the line's foot.
                 val caretHeight = with(LocalDensity.current) { amountSize.toDp() } * 0.75f
                 val caret = @Composable {
@@ -221,14 +221,13 @@ fun AmountScreen(kind: FlowKind, number: String, groups: List<Int>?, onPay: (amo
                     }
                 }
                 Row(verticalAlignment = Alignment.Bottom) {
-                    if (amount.isEmpty()) caret()
                     Text(
                         shown,
                         style = Type.amount.copy(fontSize = amountSize, letterSpacing = (-2).sp),
                         color = if (amount.isEmpty()) t.line else t.ink,
                         maxLines = 1,
                     )
-                    if (amount.isNotEmpty()) caret()
+                    caret()
                     Text("TK", style = Type.title.copy(fontSize = 26.sp.capScale()), color = t.inkSoft,
                         modifier = Modifier.padding(start = 10.dp, bottom = 16.dp))
                 }

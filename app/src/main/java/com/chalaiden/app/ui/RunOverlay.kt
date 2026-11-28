@@ -168,9 +168,9 @@ private fun PinStep(flow: UssdFlow) {
     val t = tokens
     val pin = PinEntry.pin
     Column(Modifier.fillMaxSize()) {
-        // Details, then the dots and where the PIN goes, right under the amount; the keypad takes the rest
-        // and sits on the hold button. The details scroll and the keys shrink (to 40dp) before "Hold to pay"
-        // is pushed off: at 200% text on a small phone all of it must still be reachable.
+        // Details at the top; the dots, where the PIN goes and the keypad sit together on the hold button.
+        // The details scroll and the keys shrink (to 40dp) before "Hold to pay" is pushed off: at 200% text
+        // on a small phone all of it must still be reachable.
         BoxWithConstraints(Modifier.weight(1f)) {
         val reference = flow.reference?.takeIf { !Flows.isDefaultReference(it) }
         // Why the fingerprint didn't work. In with the details, so it shares their capped, scrolling room
@@ -190,41 +190,48 @@ private fun PinStep(flow: UssdFlow) {
                 }
             }
         }
-        Spacer(Modifier.height(if (details) 24.dp else 8.dp))
-        PinDots(pin.length, PIN_LENGTH, Modifier.align(Alignment.CenterHorizontally))
-        Spacer(Modifier.height(16.dp))
-        // With One Tap on, the phone's fingerprint sheet opens over this screen by itself; "Use PIN" there
-        // leaves this pad. The sheet can be brought back from here while nothing is dialled yet.
-        val oneTap by OneTap.saved.collectAsState()
-        val suspect by OneTap.suspect.collectAsState()
-        val cold = UssdSession.current.collectAsState().value?.state == RunState.Ready
-        // The pill and the prompt share one height, so the keys don't resize on the first digit.
-        Box(Modifier.fillMaxWidth().heightIn(min = 48.dp), contentAlignment = Alignment.Center) {
-          when {
-            // Not while bKash's last answer to the saved PIN was "wrong": it would only send it again.
-            oneTap && !suspect && cold && pin.isEmpty() -> Row(
-                Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(50)).background(t.raised)
-                    .clickable(role = Role.Button) { OneTap.pinNotice.value = null; OneTap.asks.tryEmit(Unit) }
-                    .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(AppIcons.Fingerprint, contentDescription = null, tint = t.ink, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Use fingerprint", style = Type.label, color = t.ink)
+        // The dots, the prompt and the keypad that fills them stay together at the bottom, on the button,
+        // as on the amount screen: hung under the header, the dots were a thumb's length from the keys.
+        Column(
+            if (compact) Modifier.padding(top = if (details) 24.dp else 8.dp)
+            else Modifier.weight(1f).padding(top = if (details) 24.dp else 8.dp),
+            verticalArrangement = Arrangement.Bottom,
+        ) {
+            PinDots(pin.length, PIN_LENGTH, Modifier.align(Alignment.CenterHorizontally))
+            Spacer(Modifier.height(16.dp))
+            // With One Tap on, the phone's fingerprint sheet opens over this screen by itself; "Use PIN" there
+            // leaves this pad. The sheet can be brought back from here while nothing is dialled yet.
+            val oneTap by OneTap.saved.collectAsState()
+            val suspect by OneTap.suspect.collectAsState()
+            val cold = UssdSession.current.collectAsState().value?.state == RunState.Ready
+            // The pill and the prompt share one height, so the keys don't resize on the first digit.
+            Box(Modifier.fillMaxWidth().heightIn(min = 48.dp), contentAlignment = Alignment.Center) {
+              when {
+                // Not while bKash's last answer to the saved PIN was "wrong": it would only send it again.
+                oneTap && !suspect && cold && pin.isEmpty() -> Row(
+                    Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(50)).background(t.raised)
+                        .clickable(role = Role.Button) { OneTap.pinNotice.value = null; OneTap.asks.tryEmit(Unit) }
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(AppIcons.Fingerprint, contentDescription = null, tint = t.ink, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Use fingerprint", style = Type.label, color = t.ink)
+                }
+                else -> Text("Enter your PIN", style = Type.label, color = t.inkSoft, maxLines = 1)
+              }
             }
-            else -> Text("Enter your PIN", style = Type.label, color = t.inkSoft, maxLines = 1)
-          }
+            Keypad(
+                // The notice stays while typing: clearing it would resize the keys on the first press.
+                onKey = {
+                    if (PinEntry.pin.length < PIN_LENGTH) PinEntry.pin += it
+                    UssdSession.warmUp()
+                },
+                onBackspace = { PinEntry.pin = PinEntry.pin.dropLast(1) },
+                modifier = if (compact) Modifier.padding(top = 8.dp) else Modifier.weight(1f, fill = false).padding(top = 8.dp),
+                keyHeight = if (compact) 48.dp else null,
+            )
         }
-        Keypad(
-            // The notice stays while typing: clearing it would resize the keys on the first press.
-            onKey = {
-                if (PinEntry.pin.length < PIN_LENGTH) PinEntry.pin += it
-                UssdSession.warmUp()
-            },
-            onBackspace = { PinEntry.pin = PinEntry.pin.dropLast(1) },
-            modifier = if (compact) Modifier.padding(top = 8.dp) else Modifier.weight(1f).padding(top = 8.dp),
-            keyHeight = if (compact) 48.dp else null,
-        )
         }
         }
         Spacer(Modifier.height(12.dp))
